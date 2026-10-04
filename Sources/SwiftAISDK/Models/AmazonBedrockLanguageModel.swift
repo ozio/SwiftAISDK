@@ -516,14 +516,21 @@ public final class AmazonBedrockLanguageModel: LanguageModel, @unchecked Sendabl
         if let topP { inferenceConfig["topP"] = .number(topP) }
         if let topK { inferenceConfig["topK"] = .number(Double(topK)) }
         if !stopSequences.isEmpty { inferenceConfig["stopSequences"] = .array(stopSequences) }
+        let reasoningConfig = providerOptions.removeValue(forKey: "reasoningConfig")
         bedrockApplyReasoningConfig(
-            providerOptions.removeValue(forKey: "reasoningConfig"),
+            reasoningConfig,
             modelID: modelID,
             modelFamily: settings.modelFamily,
             inferenceConfig: &inferenceConfig,
             providerOptions: &providerOptions,
             warnings: &warnings
         )
+        if modelID.contains("amazon.nova-2-lite-v1:0"),
+           reasoningConfig?["type"]?.stringValue == "enabled",
+           ["high", "xhigh", "max"].contains(reasoningConfig?["maxReasoningEffort"]?.stringValue ?? ""),
+           inferenceConfig.removeValue(forKey: "maxTokens") != nil {
+            warnings.append(AIWarning(type: "unsupported", feature: "maxOutputTokens", message: "maxOutputTokens is not supported by \(modelID) when high reasoning is enabled and will be ignored"))
+        }
         if !inferenceConfig.isEmpty { body["inferenceConfig"] = .object(inferenceConfig) }
         if let toolConfig = preparedTools.toolConfig {
             body["toolConfig"] = toolConfig

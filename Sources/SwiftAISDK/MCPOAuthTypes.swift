@@ -427,6 +427,19 @@ public struct MCPOAuthServerError: Error, Equatable, CustomStringConvertible, Se
     }
 }
 
+public struct MCPOAuthAuthorizationServerMismatchError: Error, Equatable, CustomStringConvertible, Sendable {
+    public let code = "authorization_server_mismatch"
+    public var message: String
+    public init(message: String) { self.message = message }
+    public var description: String { "\(code): \(message)" }
+}
+
+/// Identifies the credential generation that failed during a refresh.
+public struct MCPOAuthCredentialInvalidationContext: Sendable {
+    public var tokens: MCPOAuthTokens
+    public init(tokens: MCPOAuthTokens) { self.tokens = tokens }
+}
+
 public struct MCPOAuthClientAuthenticationRequest: Sendable {
     public var headers: [String: String]
     public var parameters: [URLQueryItem]
@@ -461,6 +474,8 @@ public protocol MCPOAuthClientProvider: Sendable {
     func saveCodeVerifier(_ codeVerifier: String) async throws
     func codeVerifier() async throws -> String
     func invalidateCredentials(_ scope: MCPOAuthCredentialScope) async
+    /// Shared stores should atomically compare and delete this token generation.
+    func invalidateCredentials(_ scope: MCPOAuthCredentialScope, context: MCPOAuthCredentialInvalidationContext?) async
 
     func clientInformation() async throws -> MCPOAuthClientInformation?
     /// Returns true only when the current client information came from a
@@ -482,6 +497,9 @@ public protocol MCPOAuthClientProvider: Sendable {
 
 public extension MCPOAuthClientProvider {
     func invalidateCredentials(_ scope: MCPOAuthCredentialScope) async {}
+    func invalidateCredentials(_ scope: MCPOAuthCredentialScope, context: MCPOAuthCredentialInvalidationContext?) async {
+        await invalidateCredentials(scope)
+    }
 
     func clientInformation() async throws -> MCPOAuthClientInformation? { nil }
     func isClientInformationDynamicallyRegistered() async -> Bool { false }

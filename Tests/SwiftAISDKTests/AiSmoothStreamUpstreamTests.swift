@@ -300,6 +300,11 @@ import Testing
     #expect(parts.contains(.reasoningDeltaPart(
         id: "1",
         delta: "thinking...",
+        providerMetadata: [:]
+    )))
+    #expect(parts.contains(.reasoningDeltaPart(
+        id: "1",
+        delta: "",
         providerMetadata: signature
     )))
 }

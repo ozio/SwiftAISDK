@@ -151,6 +151,11 @@ func bedrockRequestProviderOptions(providerOptions: [String: JSONValue], extraBo
         }
         output.merge(object) { _, new in new }
     }
+    if let metadata = output["requestMetadata"] {
+        guard let object = metadata.objectValue, object.values.allSatisfy({ $0.stringValue != nil }) else {
+            throw AIError.invalidArgument(argument: "providerOptions.amazonBedrock.requestMetadata", message: "requestMetadata must contain string values.")
+        }
+    }
     return output
 }
 
@@ -176,6 +181,7 @@ func bedrockReasoningConfigEnabled(_ value: JSONValue?) -> Bool {
 }
 
 func bedrockApplyRequestProviderOptions(_ providerOptions: [String: JSONValue], to body: inout [String: JSONValue]) {
+    if let requestMetadata = providerOptions["requestMetadata"] { body["requestMetadata"] = requestMetadata }
     if let guardrailConfig = providerOptions["guardrailConfig"] {
         body["guardrailConfig"] = guardrailConfig
     }

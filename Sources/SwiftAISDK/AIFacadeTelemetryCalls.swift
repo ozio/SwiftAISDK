@@ -14,6 +14,7 @@ func withTelemetry<Output: Sendable>(
     warnings: @escaping @Sendable (Output) -> [AIWarning],
     providerMetadata: @escaping @Sendable (Output) -> [String: JSONValue],
     responseMetadata: @escaping @Sendable (Output) -> AIResponseMetadata,
+    providerUsage: (@Sendable (Output) -> [String: JSONValue]?)? = nil,
     wrapLanguageModelCall: Bool = false,
     logEmptyWarnings: Bool = true,
     operation: @escaping @Sendable () async throws -> Output
@@ -69,7 +70,7 @@ func withTelemetry<Output: Sendable>(
                 errorDescription: retry.errorDescription
             ))
         }, operation: wrappedOperation)
-        await dispatcher.record(telemetryEvent(
+        var endEvent = telemetryEvent(
             kind: .end,
             callID: callID,
             operationID: operationID,
@@ -84,7 +85,9 @@ func withTelemetry<Output: Sendable>(
             providerMetadata: providerMetadata(result),
             responseMetadata: responseMetadata(result),
             useResponseModelID: wrapLanguageModelCall
-        ))
+        )
+        endEvent.providerUsage = providerUsage?(result)
+        await dispatcher.record(endEvent)
         let resultWarnings = warnings(result)
         if logEmptyWarnings || !resultWarnings.isEmpty {
             await AIWarningLogging.logWarnings(resultWarnings, providerID: providerID, modelID: modelID)

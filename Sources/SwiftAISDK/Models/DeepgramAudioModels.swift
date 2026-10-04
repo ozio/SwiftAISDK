@@ -38,7 +38,8 @@ public final class DeepgramTranscriptionModel: TranscriptionModel, @unchecked Se
             segments: segments,
             language: raw["results"]?["channels"]?[0]?["detected_language"]?.stringValue,
             durationInSeconds: raw["metadata"]?["duration"]?.doubleValue ?? transcriptionDuration(from: segments),
-            responseMetadata: aiResponseMetadata(from: raw, response: response, modelID: modelID)
+            responseMetadata: aiResponseMetadata(from: raw, response: response, modelID: modelID),
+            usage: raw["metadata"]?["duration"]?.doubleValue.map { ["seconds": .number($0)] }
         )
     }
 }
@@ -78,7 +79,8 @@ public final class DeepgramSpeechModel: SpeechModel, @unchecked Sendable {
             warnings: prepared.warnings,
             providerMetadata: deepgramSpeechProviderMetadata(from: response.headers),
             requestMetadata: AIRequestMetadata(body: .object(["text": .string(request.text)]), headers: request.headers),
-            responseMetadata: aiResponseMetadata(response: response, modelID: modelID)
+            responseMetadata: aiResponseMetadata(response: response, modelID: modelID),
+            usage: deepgramSpeechProviderMetadata(from: response.headers)["deepgram"]?["charCount"]?.doubleValue.map { ["characters": .number($0)] }
         )
     }
 }

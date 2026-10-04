@@ -8,13 +8,13 @@ description: Public SwiftAISDK APIs for provider models.
 | Symbol kind | Count |
 | --- | --- |
 | Case | 10 |
-| Class | 123 |
+| Class | 125 |
 | Enumeration | 15 |
 | Function | 3 |
-| Initializer | 13 |
-| Instance Method | 219 |
-| Instance Property | 333 |
-| Structure | 10 |
+| Initializer | 14 |
+| Instance Method | 222 |
+| Instance Property | 341 |
+| Structure | 11 |
 | Type Alias | 3 |
 | Type Method | 97 |
 
@@ -45,6 +45,8 @@ description: Public SwiftAISDK APIs for provider models.
 | Class | `AnthropicLanguageModel` | `final class AnthropicLanguageModel` | [Sources/SwiftAISDK/Models/AnthropicModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/AnthropicModels.swift) |
 | Class | `AnthropicSkillsClient` | `final class AnthropicSkillsClient` | [Sources/SwiftAISDK/Models/OpenAISkills.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/OpenAISkills.swift) |
 | Class | `AssemblyAITranscriptionModel` | `final class AssemblyAITranscriptionModel` | [Sources/SwiftAISDK/Models/AssemblyAIAudioModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/AssemblyAIAudioModels.swift) |
+| Class | `AzureSpeechModel` | `final class AzureSpeechModel` | [Sources/SwiftAISDK/Models/AzureAudioModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/AzureAudioModels.swift) |
+| Class | `AzureTranscriptionModel` | `final class AzureTranscriptionModel` | [Sources/SwiftAISDK/Models/AzureAudioModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/AzureAudioModels.swift) |
 | Class | `BasetenEmbeddingModel` | `final class BasetenEmbeddingModel` | [Sources/SwiftAISDK/Models/BasetenModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/BasetenModels.swift) |
 | Class | `BlackForestLabsImageModel` | `final class BlackForestLabsImageModel` | [Sources/SwiftAISDK/Models/BlackForestLabsMediaModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/BlackForestLabsMediaModels.swift) |
 | Class | `BlackForestLabsVideoModel` | `final class BlackForestLabsVideoModel` | [Sources/SwiftAISDK/Models/BlackForestLabsVideoModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/BlackForestLabsVideoModel.swift) |
@@ -184,6 +186,7 @@ description: Public SwiftAISDK APIs for provider models.
 | Initializer | `init(modelFamily:)` | `init(modelFamily: AmazonBedrockChatModelFamily? = nil)` | [Sources/SwiftAISDK/Models/AmazonBedrockModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/AmazonBedrockModels.swift) |
 | Initializer | `init(modelID:settings:)` | `init(modelID: String = "gpt-live-1", settings: ProviderSettings = .init()) throws` | [Sources/SwiftAISDK/Models/OpenAILiveModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/OpenAILiveModel.swift) |
 | Initializer | `init(numResults:)` | `init(numResults: Int? = nil)` | [Sources/SwiftAISDK/Models/GatewayModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/GatewayModels.swift) |
+| Initializer | `init(speechBaseURL:maiBaseURL:webSocketTransport:)` | `init(speechBaseURL: String? = nil, maiBaseURL: String? = nil, webSocketTransport: any AIDuplexWebSocketTransport = URLSessionDuplexWebSocketTransport.shared)` | [Sources/SwiftAISDK/Models/AzureAudioModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/AzureAudioModels.swift) |
 | Initializer | `init(statusCode:isRetryable:)` | `init(statusCode: Int? = nil, isRetryable: Bool? = nil)` | [Sources/SwiftAISDK/Models/OpenAICompatibleConfig.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/OpenAICompatibleConfig.swift) |
 | Initializer | `init(statusCode:responseBody:isRetryable:)` | `init(statusCode: Int? = nil, responseBody: String, isRetryable: Bool? = nil)` | [Sources/SwiftAISDK/Models/OpenAICompatibleConfig.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/OpenAICompatibleConfig.swift) |
 | Instance Method | `audio(dubbingID:languageCode:headers:abortSignal:)` | `func audio(dubbingID: String, languageCode: String, headers: [String : String] = [:], abortSignal: AIAbortSignal? = nil) async throws -> DubbingAudioResult` | [Sources/SwiftAISDK/Models/ElevenLabsExtendedAudioModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/ElevenLabsExtendedAudioModels.swift) |
@@ -318,6 +321,7 @@ description: Public SwiftAISDK APIs for provider models.
 | Instance Method | `rerank(_:)` | `func rerank(_ request: RerankingRequest) async throws -> RerankingResult` | [Sources/SwiftAISDK/Models/VoyageModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/VoyageModels.swift) |
 | Instance Method | `serializeClientEvent(_:)` | `func serializeClientEvent(_ event: AIRealtimeClientEvent) async throws -> AIRealtimeWireMessage?` | [Sources/SwiftAISDK/Models/OpenAILiveModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/OpenAILiveModel.swift) |
 | Instance Method | `serializeClientEvent(_:)` | `func serializeClientEvent(_ event: AIRealtimeClientEvent) async throws -> AIRealtimeWireMessage?` | [Sources/SwiftAISDK/Models/XAIRealtimeModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/XAIRealtimeModel.swift) |
+| Instance Method | `speak(_:)` | `func speak(_ request: SpeechRequest) async throws -> SpeechResult` | [Sources/SwiftAISDK/Models/AzureAudioModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/AzureAudioModels.swift) |
 | Instance Method | `speak(_:)` | `func speak(_ request: SpeechRequest) async throws -> SpeechResult` | [Sources/SwiftAISDK/Models/CartesiaSpeechModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/CartesiaSpeechModel.swift) |
 | Instance Method | `speak(_:)` | `func speak(_ request: SpeechRequest) async throws -> SpeechResult` | [Sources/SwiftAISDK/Models/DeepgramAudioModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/DeepgramAudioModels.swift) |
 | Instance Method | `speak(_:)` | `func speak(_ request: SpeechRequest) async throws -> SpeechResult` | [Sources/SwiftAISDK/Models/ElevenLabsAudioModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/ElevenLabsAudioModels.swift) |
@@ -353,6 +357,7 @@ description: Public SwiftAISDK APIs for provider models.
 | Instance Method | `stream(_:)` | `func stream(_ request: LanguageModelRequest) -> AsyncThrowingStream<LanguageStreamPart, Error>` | [Sources/SwiftAISDK/Models/AnthropicBatchLanguageModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/AnthropicBatchLanguageModel.swift) |
 | Instance Method | `stream(_:)` | `func stream(_ request: LanguageModelRequest) -> AsyncThrowingStream<LanguageStreamPart, Error>` | [Sources/SwiftAISDK/Models/AnthropicModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/AnthropicModels.swift) |
 | Instance Method | `stream(_:)` | `func stream(_ request: LanguageModelRequest) -> AsyncThrowingStream<LanguageStreamPart, Error>` | [Sources/SwiftAISDK/Models/AnthropicModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/AnthropicModels.swift) |
+| Instance Method | `stream(_:)` | `func stream(_ request: StreamingTranscriptionRequest) async throws -> StreamingTranscriptionResult` | [Sources/SwiftAISDK/Models/AzureMaiStreamingTranscription.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/AzureMaiStreamingTranscription.swift) |
 | Instance Method | `stream(_:)` | `func stream(_ request: StreamingTranscriptionRequest) async throws -> StreamingTranscriptionResult` | [Sources/SwiftAISDK/Models/CartesiaStreamingTranscriptionModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/CartesiaStreamingTranscriptionModel.swift) |
 | Instance Method | `stream(_:)` | `func stream(_ request: LanguageModelRequest) -> AsyncThrowingStream<LanguageStreamPart, Error>` | [Sources/SwiftAISDK/Models/CerebrasModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/CerebrasModels.swift) |
 | Instance Method | `stream(_:)` | `func stream(_ request: LanguageModelRequest) -> AsyncThrowingStream<LanguageStreamPart, Error>` | [Sources/SwiftAISDK/Models/CohereLanguageModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/CohereLanguageModel.swift) |
@@ -377,6 +382,7 @@ description: Public SwiftAISDK APIs for provider models.
 | Instance Method | `stream(_:)` | `func stream(_ request: LanguageModelRequest) -> AsyncThrowingStream<LanguageStreamPart, Error>` | [Sources/SwiftAISDK/Models/XAIResponsesBatchLanguageModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/XAIResponsesBatchLanguageModel.swift) |
 | Instance Method | `stream(_:)` | `func stream(_ request: LanguageModelRequest) -> AsyncThrowingStream<LanguageStreamPart, Error>` | [Sources/SwiftAISDK/Models/ZAILanguageModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/ZAILanguageModel.swift) |
 | Instance Method | `transcribe(_:)` | `func transcribe(_ request: AudioTranscriptionRequest) async throws -> TranscriptionResult` | [Sources/SwiftAISDK/Models/AssemblyAIAudioModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/AssemblyAIAudioModels.swift) |
+| Instance Method | `transcribe(_:)` | `func transcribe(_ request: AudioTranscriptionRequest) async throws -> TranscriptionResult` | [Sources/SwiftAISDK/Models/AzureAudioModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/AzureAudioModels.swift) |
 | Instance Method | `transcribe(_:)` | `func transcribe(_ request: AudioTranscriptionRequest) async throws -> TranscriptionResult` | [Sources/SwiftAISDK/Models/CartesiaTranscriptionModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/CartesiaTranscriptionModel.swift) |
 | Instance Method | `transcribe(_:)` | `func transcribe(_ request: AudioTranscriptionRequest) async throws -> TranscriptionResult` | [Sources/SwiftAISDK/Models/DeepgramAudioModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/DeepgramAudioModels.swift) |
 | Instance Method | `transcribe(_:)` | `func transcribe(_ request: AudioTranscriptionRequest) async throws -> TranscriptionResult` | [Sources/SwiftAISDK/Models/ElevenLabsAudioModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/ElevenLabsAudioModels.swift) |
@@ -437,6 +443,7 @@ description: Public SwiftAISDK APIs for provider models.
 | Instance Property | `latitude` | `var latitude: Double?` | [Sources/SwiftAISDK/Models/GatewayModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/GatewayModels.swift) |
 | Instance Property | `locale` | `var locale: String?` | [Sources/SwiftAISDK/Models/GatewayModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/GatewayModels.swift) |
 | Instance Property | `longitude` | `var longitude: Double?` | [Sources/SwiftAISDK/Models/GatewayModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/GatewayModels.swift) |
+| Instance Property | `maiBaseURL` | `var maiBaseURL: String?` | [Sources/SwiftAISDK/Models/AzureAudioModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/AzureAudioModels.swift) |
 | Instance Property | `maxEmbeddingsPerCall` | `var maxEmbeddingsPerCall: Int? { get }` | [Sources/SwiftAISDK/Models/AlibabaEmbeddingModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/AlibabaEmbeddingModel.swift) |
 | Instance Property | `maxEmbeddingsPerCall` | `var maxEmbeddingsPerCall: Int? { get }` | [Sources/SwiftAISDK/Models/AmazonBedrockEmbeddingModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/AmazonBedrockEmbeddingModel.swift) |
 | Instance Property | `maxEmbeddingsPerCall` | `var maxEmbeddingsPerCall: Int? { get }` | [Sources/SwiftAISDK/Models/BasetenModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/BasetenModels.swift) |
@@ -470,6 +477,8 @@ description: Public SwiftAISDK APIs for provider models.
 | Instance Property | `modelID` | `let modelID: String` | [Sources/SwiftAISDK/Models/AnthropicModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/AnthropicModels.swift) |
 | Instance Property | `modelID` | `let modelID: String` | [Sources/SwiftAISDK/Models/AnthropicModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/AnthropicModels.swift) |
 | Instance Property | `modelID` | `let modelID: String` | [Sources/SwiftAISDK/Models/AssemblyAIAudioModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/AssemblyAIAudioModels.swift) |
+| Instance Property | `modelID` | `let modelID: String` | [Sources/SwiftAISDK/Models/AzureAudioModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/AzureAudioModels.swift) |
+| Instance Property | `modelID` | `let modelID: String` | [Sources/SwiftAISDK/Models/AzureAudioModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/AzureAudioModels.swift) |
 | Instance Property | `modelID` | `let modelID: String` | [Sources/SwiftAISDK/Models/BasetenModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/BasetenModels.swift) |
 | Instance Property | `modelID` | `let modelID: String` | [Sources/SwiftAISDK/Models/BlackForestLabsMediaModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/BlackForestLabsMediaModels.swift) |
 | Instance Property | `modelID` | `let modelID: String` | [Sources/SwiftAISDK/Models/BlackForestLabsVideoModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/BlackForestLabsVideoModel.swift) |
@@ -588,6 +597,8 @@ description: Public SwiftAISDK APIs for provider models.
 | Instance Property | `providerID` | `let providerID: String` | [Sources/SwiftAISDK/Models/AnthropicModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/AnthropicModels.swift) |
 | Instance Property | `providerID` | `let providerID: String` | [Sources/SwiftAISDK/Models/AnthropicModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/AnthropicModels.swift) |
 | Instance Property | `providerID` | `let providerID: String` | [Sources/SwiftAISDK/Models/AssemblyAIAudioModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/AssemblyAIAudioModels.swift) |
+| Instance Property | `providerID` | `let providerID: String` | [Sources/SwiftAISDK/Models/AzureAudioModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/AzureAudioModels.swift) |
+| Instance Property | `providerID` | `let providerID: String` | [Sources/SwiftAISDK/Models/AzureAudioModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/AzureAudioModels.swift) |
 | Instance Property | `providerID` | `let providerID: String` | [Sources/SwiftAISDK/Models/BasetenModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/BasetenModels.swift) |
 | Instance Property | `providerID` | `let providerID: String` | [Sources/SwiftAISDK/Models/BlackForestLabsMediaModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/BlackForestLabsMediaModels.swift) |
 | Instance Property | `providerID` | `let providerID: String` | [Sources/SwiftAISDK/Models/BlackForestLabsVideoModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/BlackForestLabsVideoModel.swift) |
@@ -710,6 +721,7 @@ description: Public SwiftAISDK APIs for provider models.
 | Instance Property | `specificationVersion` | `let specificationVersion: String` | [Sources/SwiftAISDK/Models/EvaluationLanguageModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/EvaluationLanguageModel.swift) |
 | Instance Property | `specificationVersion` | `let specificationVersion: String` | [Sources/SwiftAISDK/Models/GatewayEvaluationModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/GatewayEvaluationModel.swift) |
 | Instance Property | `specificationVersion` | `let specificationVersion: String` | [Sources/SwiftAISDK/Models/TypesafeAIEvaluationModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/TypesafeAIEvaluationModel.swift) |
+| Instance Property | `speechBaseURL` | `var speechBaseURL: String?` | [Sources/SwiftAISDK/Models/AzureAudioModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/AzureAudioModels.swift) |
 | Instance Property | `statusCode` | `var statusCode: Int?` | [Sources/SwiftAISDK/Models/OpenAICompatibleConfig.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/OpenAICompatibleConfig.swift) |
 | Instance Property | `statusCode` | `var statusCode: Int?` | [Sources/SwiftAISDK/Models/OpenAICompatibleConfig.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/OpenAICompatibleConfig.swift) |
 | Instance Property | `strict` | `var strict: Bool?` | [Sources/SwiftAISDK/Models/GatewayModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/GatewayModels.swift) |
@@ -730,6 +742,7 @@ description: Public SwiftAISDK APIs for provider models.
 | Instance Property | `supportedURLs` | `let supportedURLs: [String : [AISupportedURLPattern]]` | [Sources/SwiftAISDK/Models/XAIResponsesBatchLanguageModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/XAIResponsesBatchLanguageModel.swift) |
 | Instance Property | `supportedURLs` | `let supportedURLs: [String : [AISupportedURLPattern]]` | [Sources/SwiftAISDK/Models/XAIResponsesBatchLanguageModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/XAIResponsesBatchLanguageModel.swift) |
 | Instance Property | `supportedURLs` | `let supportedURLs: [String : [AISupportedURLPattern]]` | [Sources/SwiftAISDK/Models/ZAILanguageModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/ZAILanguageModel.swift) |
+| Instance Property | `supportsMultiPartToolContent` | `var supportsMultiPartToolContent: Bool` | [Sources/SwiftAISDK/Models/OpenAICompatibleConfig.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/OpenAICompatibleConfig.swift) |
 | Instance Property | `supportsStructuredOutputs` | `var supportsStructuredOutputs: Bool` | [Sources/SwiftAISDK/Models/OpenAICompatibleConfig.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/OpenAICompatibleConfig.swift) |
 | Instance Property | `supportsUnaryVideoGeneration` | `let supportsUnaryVideoGeneration: Bool` | [Sources/SwiftAISDK/Models/FalMediaModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/FalMediaModels.swift) |
 | Instance Property | `supportsVideoGenerationWebhooks` | `let supportsVideoGenerationWebhooks: Bool` | [Sources/SwiftAISDK/Models/FalMediaModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/FalMediaModels.swift) |
@@ -737,9 +750,11 @@ description: Public SwiftAISDK APIs for provider models.
 | Instance Property | `timezone` | `var timezone: String?` | [Sources/SwiftAISDK/Models/GatewayModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/GatewayModels.swift) |
 | Instance Property | `transformRequestBody` | `var transformRequestBody: (@Sendable ([String : JSONValue]) -> [String : JSONValue])?` | [Sources/SwiftAISDK/Models/OpenAICompatibleConfig.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/OpenAICompatibleConfig.swift) |
 | Instance Property | `transport` | `var transport: any AITransport` | [Sources/SwiftAISDK/Models/OpenAICompatibleConfig.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/OpenAICompatibleConfig.swift) |
+| Instance Property | `webSocketTransport` | `var webSocketTransport: any AIDuplexWebSocketTransport` | [Sources/SwiftAISDK/Models/AzureAudioModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/AzureAudioModels.swift) |
 | Instance Property | `webSource` | `var webSource: GatewayTakoWebSourceConfig?` | [Sources/SwiftAISDK/Models/GatewayModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/GatewayModels.swift) |
 | Structure | `AmazonBedrockChatModelSettings` | `struct AmazonBedrockChatModelSettings` | [Sources/SwiftAISDK/Models/AmazonBedrockModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/AmazonBedrockModels.swift) |
 | Structure | `AmazonBedrockEmbeddingModelSettings` | `struct AmazonBedrockEmbeddingModelSettings` | [Sources/SwiftAISDK/Models/AmazonBedrockEmbeddingModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/AmazonBedrockEmbeddingModel.swift) |
+| Structure | `AzureOpenAIAudioSettings` | `struct AzureOpenAIAudioSettings` | [Sources/SwiftAISDK/Models/AzureAudioModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/AzureAudioModels.swift) |
 | Structure | `GatewayBrowserbaseFetchConfig` | `struct GatewayBrowserbaseFetchConfig` | [Sources/SwiftAISDK/Models/GatewayModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/GatewayModels.swift) |
 | Structure | `GatewayBrowserbaseSearchConfig` | `struct GatewayBrowserbaseSearchConfig` | [Sources/SwiftAISDK/Models/GatewayModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/GatewayModels.swift) |
 | Structure | `GatewayTakoDataSourceConfig` | `struct GatewayTakoDataSourceConfig` | [Sources/SwiftAISDK/Models/GatewayModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/GatewayModels.swift) |

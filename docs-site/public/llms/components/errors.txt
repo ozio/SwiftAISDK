@@ -10,7 +10,7 @@ Source URL: /components/errors/
 | Enumeration | 2 |
 | Function | 1 |
 | Initializer | 15 |
-| Instance Property | 73 |
+| Instance Property | 74 |
 | Structure | 14 |
 | Type Method | 1 |
 | Type Property | 1 |
@@ -86,6 +86,7 @@ Source URL: /components/errors/
 | Instance Property | `isRetryable` | `var isRetryable: Bool` | [Sources/SwiftAISDK/GatewayErrors.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/GatewayErrors.swift) |
 | Instance Property | `kind` | `var kind: AINoOutputKind` | [Sources/SwiftAISDK/Errors.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Errors.swift) |
 | Instance Property | `maxEmbeddingsPerCall` | `var maxEmbeddingsPerCall: Int` | [Sources/SwiftAISDK/Errors.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Errors.swift) |
+| Instance Property | `message` | `var message: String?` | [Sources/SwiftAISDK/Errors.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Errors.swift) |
 | Instance Property | `message` | `var message: String` | [Sources/SwiftAISDK/Errors.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Errors.swift) |
 | Instance Property | `message` | `var message: String` | [Sources/SwiftAISDK/Errors.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Errors.swift) |
 | Instance Property | `message` | `var message: String` | [Sources/SwiftAISDK/Errors.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Errors.swift) |

@@ -35,6 +35,7 @@ public struct AudioTranscriptionRequest: Sendable {
 }
 
 public struct TranscriptionResult: Sendable {
+    public var usage: [String: JSONValue]? = nil
     public var text: String
     public var rawValue: JSONValue
     public var segments: [TranscriptionSegment]
@@ -65,6 +66,22 @@ public struct TranscriptionResult: Sendable {
         self.providerMetadata = providerMetadata
         self.requestMetadata = requestMetadata
         self.responseMetadata = responseMetadata
+    }
+
+    public init(
+        text: String,
+        rawValue: JSONValue,
+        segments: [TranscriptionSegment] = [],
+        language: String? = nil,
+        durationInSeconds: Double? = nil,
+        warnings: [AIWarning] = [],
+        providerMetadata: [String: JSONValue] = [:],
+        requestMetadata: AIRequestMetadata = AIRequestMetadata(),
+        responseMetadata: AIResponseMetadata = AIResponseMetadata(),
+        usage: [String: JSONValue]?
+    ) {
+        self.init(text: text, rawValue: rawValue, segments: segments, language: language, durationInSeconds: durationInSeconds, warnings: warnings, providerMetadata: providerMetadata, requestMetadata: requestMetadata, responseMetadata: responseMetadata)
+        self.usage = usage
     }
 }
 
@@ -118,6 +135,7 @@ public struct SpeechRequest: Sendable {
 }
 
 public struct SpeechResult: Sendable {
+    public var usage: [String: JSONValue]? = nil
     public var audio: Data
     public var contentType: String?
     public var warnings: [AIWarning]
@@ -139,6 +157,19 @@ public struct SpeechResult: Sendable {
         self.providerMetadata = providerMetadata
         self.requestMetadata = requestMetadata
         self.responseMetadata = responseMetadata
+    }
+
+    public init(
+        audio: Data,
+        contentType: String? = nil,
+        warnings: [AIWarning] = [],
+        providerMetadata: [String: JSONValue] = [:],
+        requestMetadata: AIRequestMetadata = AIRequestMetadata(),
+        responseMetadata: AIResponseMetadata = AIResponseMetadata(),
+        usage: [String: JSONValue]?
+    ) {
+        self.init(audio: audio, contentType: contentType, warnings: warnings, providerMetadata: providerMetadata, requestMetadata: requestMetadata, responseMetadata: responseMetadata)
+        self.usage = usage
     }
 }
 

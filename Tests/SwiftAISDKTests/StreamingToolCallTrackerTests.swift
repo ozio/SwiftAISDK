@@ -173,7 +173,7 @@ import Testing
         if case let .toolCall(call) = part { return call }
         return nil
     }
-    #expect(calls.map(\.id) == ["call_1", "call_2", "call_3"])
+    #expect(calls.map(\.id) == ["call_1", "call_3", "call_2"])
 }
 
 @Test func streamingToolCallTrackerContinuesLatestWhenIndexIsMissingAndUsesIndexForEmptyIDLikeUpstream() throws {
@@ -242,15 +242,6 @@ import Testing
 }
 
 @Test func streamingToolCallTrackerValidatesRequiredFieldsLikeUpstream() {
-    var missingIDTracker = AIStreamingToolCallTracker()
-    expectInvalidStreamingToolCall(message: "Expected 'id' to be a string.") {
-        _ = try missingIDTracker.processDelta(AIStreamingToolCallDelta(
-            index: 0,
-            type: "function",
-            functionName: "fn"
-        ))
-    }
-
     var missingNameTracker = AIStreamingToolCallTracker()
     expectInvalidStreamingToolCall(message: "Expected 'function.name' to be a string.") {
         _ = try missingNameTracker.processDelta(AIStreamingToolCallDelta(

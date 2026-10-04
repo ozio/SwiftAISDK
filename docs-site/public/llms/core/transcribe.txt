@@ -99,6 +99,35 @@ translation remain deferred.
 
 ## Options
 
+Azure MAI Transcribe 1.5/2 file models use the Speech endpoint; they expose
+timed segments, duration, a language only for a single ISO-639-1 locale, and
+`providerMetadata.azure.phrases`. Options under `providerOptions.azure` include
+`timestamps`, `transcribeStyle`, one-element `locales`, `diarization.enabled`,
+and `phraseList.phrases`. Unknown options fail before a request is sent.
+
+MAI Transcribe 2 streaming accepts mono 16-bit PCM at 16 or 24 kHz. The model
+performs the session handshake, sends audio incrementally, commits after input
+ends, and cancels the socket and audio producer on abort or early close:
+
+```swift
+let azure = try AIProviders.azure(resourceName: "my-resource")
+let model = try azure.streamingTranscriptionModel("mai-transcribe-2-streaming")
+let result = try await AI.streamTranscribe(
+    model: model,
+    request: StreamingTranscriptionRequest(
+        audio: audioPipe.input,
+        inputAudioFormat: .init(mediaType: "audio/pcm", sampleRate: 24_000),
+        providerOptions: ["azure": ["language": "en"]]
+    ),
+    telemetry: .init(integrations: [integration])
+)
+```
+
+`AzureOpenAIAudioSettings` configures separate `speechBaseURL`, `maiBaseURL`,
+and an injectable `webSocketTransport`. `ProviderSettings.baseURL` continues
+to configure the OpenAI endpoint. MAI file and streaming models have separate
+routes; `mai-transcribe-2-streaming` does not support file transcription.
+
 - `fileName` and `mimeType` describe the submitted audio.
 - `language` hints the expected language when the provider supports it.
 - `prompt` gives the model context for names, vocabulary, or formatting.
@@ -113,6 +142,11 @@ optional threshold and nonnegative prefix/silence padding. The
 ## Results
 
 `TranscriptionResult` includes text plus optional timing and language metadata:
+
+`usage` preserves optional provider-native billing JSON, including tokens or
+seconds. `StreamingTranscriptionFinish.usage` preserves stream usage when the
+provider supplies it. `AI.streamTranscribe` records start and one terminal
+telemetry event; its byte length counts only audio consumed by the model.
 
 - `text`
 - `segments`

@@ -2,6 +2,19 @@
 
 Source URL: /cookbook/mcp-tools/
 
+## OAuth refresh storage
+
+Shared OAuth stores can implement
+`invalidateCredentials(_:context:)` and atomically compare the supplied
+`context.tokens` before deleting tokens. This preserves credentials installed
+by a concurrent successful refresh. Existing one-argument implementations
+continue to receive unconditional invalidation through the default adapter.
+
+Authorization-server metadata changes now throw
+`MCPOAuthAuthorizationServerMismatchError` with code
+`authorization_server_mismatch`. Catch this type when presenting a distinct
+reauthorization message; it does not trigger token invalidation or retry.
+
 Use MCP when tools live outside your process or are shared by multiple clients.
 
 ```swift

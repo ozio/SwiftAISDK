@@ -78,7 +78,7 @@ import Testing
     #expect(request.url.absoluteString == "https://api.anthropic.com/v1/messages/batches")
     #expect(request.headers["x-api-key"] == "test-api-key")
     #expect(request.headers["operation-header"] == "operation")
-    #expect(request.headers["user-agent"] == "ai/7.0.117")
+    #expect(request.headers["user-agent"] == "ai/7.0.127")
     let betaHeader = try #require(request.headers["anthropic-beta"])
     let betas = Set(betaHeader.split(separator: ",").map(String.init))
     #expect(betas.contains("batch-beta"))
@@ -423,6 +423,27 @@ import Testing
     }
     #expect(id == "valid")
     #expect(result.text == "Paris")
+}
+
+@Test func anthropicBatchV4ValidatesFallbackMarkersPerItemAndPreservesValidMarkers() async throws {
+    let status = anthropicBatchResponse(status: "ended", resultsURL: "https://api.anthropic.com/v1/messages/batches/msgbatch_123/results")
+    let malformed = #"{"custom_id":"bad","result":{"type":"succeeded","message":{"type":"message","content":[{"type":"fallback"}],"usage":{"input_tokens":1,"output_tokens":1}}}}"#
+    let valid = #"{"custom_id":"valid","result":{"type":"succeeded","message":{"type":"message","content":[{"type":"fallback","from":{"model":"source"},"to":{"model":"target"}},{"type":"text","text":"done"}],"usage":{"input_tokens":1,"output_tokens":1}}}}"#
+    let transport = AnthropicBatchScriptedTransport(sendResponses: [jsonResponse(status)], streamChunks: [Data("\(malformed)\n\(valid)".utf8)])
+    let provider = try AIProviders.anthropic(settings: .init(apiKey: "key", transport: transport))
+    let stream = try await provider.batchLanguageModel("claude-sonnet-5-5").getBatchResults(.init(batchID: "msgbatch_123"))
+    var items: [AIBatchItemResult<TextGenerationResult>] = []
+    for try await item in stream { items.append(item) }
+    #expect(items.count == 2)
+    guard case let .failed(id, error, _) = items[0] else { Issue.record("Expected invalid fallback failure"); return }
+    #expect(id == "bad")
+    #expect(error.code == "invalid_response")
+    guard case let .succeeded(id, result) = items[1] else { Issue.record("Expected valid fallback success"); return }
+    #expect(id == "valid")
+    guard case let .custom(value, metadata) = try #require(result.content.first) else { Issue.record("Expected fallback content"); return }
+    #expect(value["kind"] == "anthropic.fallback")
+    #expect(metadata["anthropic"]?["from"]?["model"] == "source")
+    #expect(metadata["anthropic"]?["to"]?["model"] == "target")
 }
 
 @Test func anthropicBatchV4KeepsMalformedResultAndErroredEnvelopesItemLocal() async throws {

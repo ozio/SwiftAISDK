@@ -1,7 +1,7 @@
 import Foundation
 
 /// The published `@ai-sdk/fish-audio` package version mirrored by this port.
-public let fishAudioProviderVersion = "3.0.27"
+public let fishAudioProviderVersion = "3.0.31"
 
 /// Creates a Fish Audio provider using the same defaults as
 /// `createFishAudio` from `@ai-sdk/fish-audio`.
@@ -32,7 +32,7 @@ public final class FishAudioProvider: AIProvider, @unchecked Sendable {
 
         var headers = withUserAgentSuffix(
             settings.headers,
-            "ai-sdk/fish-audio/\(fishAudioProviderVersion)"
+            "ai-sdk-fish-audio/\(fishAudioProviderVersion)"
         )
         headers["authorization"] = headers["authorization"]
             ?? "Bearer \(apiKey)"

@@ -605,20 +605,18 @@ public func smoothStream(
                         continue
                     }
 
-                    if (activeKind != smoothable.kind || activeID != smoothable.id) && !buffer.isEmpty {
+                    if (activeKind != smoothable.kind || activeID != smoothable.id || activeProviderMetadata != smoothable.providerMetadata) && !buffer.isEmpty {
                         flushBuffer()
                     }
 
                     activeKind = smoothable.kind
                     activeID = smoothable.id
                     buffer += smoothable.text
-                    if !smoothable.providerMetadata.isEmpty {
-                        activeProviderMetadata.merge(smoothable.providerMetadata) { _, new in new }
-                    }
+                    activeProviderMetadata = smoothable.providerMetadata
 
-                    if smoothable.text.isEmpty,
-                       buffer.isEmpty,
-                       !activeProviderMetadata.isEmpty {
+                    if smoothable.text.isEmpty, !activeProviderMetadata.isEmpty {
+                        flushBuffer()
+                        activeProviderMetadata = smoothable.providerMetadata
                         continuation.yield(smoothable.kind.part(
                             text: "",
                             id: smoothable.id,
@@ -646,13 +644,13 @@ public func smoothStream(
                             id: smoothable.id,
                             providerMetadata: activeProviderMetadata
                         ))
-                        activeProviderMetadata = [:]
                         buffer.removeFirst(match.count)
                         if let delayNanoseconds {
                             try await Task.sleep(nanoseconds: delayNanoseconds)
                         }
                     }
                 }
+                flushBuffer()
                 continuation.finish()
             } catch {
                 continuation.finish(throwing: error)

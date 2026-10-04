@@ -75,6 +75,9 @@ public final class OpenAICompatibleImageModel: ImageModel, @unchecked Sendable {
     public let providerID: String
     public let modelID: String
     private let config: ModelHTTPConfig
+    var hasOpenAIImageCapabilities: Bool {
+        openAIBackedProviderRoot(providerID, config: config) == "openai"
+    }
     private var maxImagesPerCall: Int {
         isOpenAIBackedProvider(providerID, config: config) ? openAIImageMaxImagesPerCall(modelID) : 10
     }
@@ -462,7 +465,8 @@ public final class OpenAICompatibleTranscriptionModel: TranscriptionModel, @unch
                 ? [:]
                 : ["openai": .object(["segments": .array(diarizedSegments)])],
             requestMetadata: AIRequestMetadata(body: .object(metadataBody), headers: request.headers),
-            responseMetadata: openAICompatibleResponseMetadata(from: raw, response: response, modelID: modelID)
+            responseMetadata: openAICompatibleResponseMetadata(from: raw, response: response, modelID: modelID),
+            usage: raw["usage"]?.objectValue
         )
     }
 }

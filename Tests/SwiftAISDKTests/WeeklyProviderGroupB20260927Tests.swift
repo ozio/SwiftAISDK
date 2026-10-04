@@ -144,7 +144,7 @@ private final class WeeklyProviderGroupBReasoningModel: LanguageModel, @unchecke
     let body = try decodeJSONBody(try #require(request.body))
     #expect(request.method == "POST")
     #expect(request.url.absoluteString.hasSuffix("/batch/cancel"))
-    #expect(request.headers["user-agent"] == "ai-sdk/gateway/4.0.95")
+    #expect(request.headers["user-agent"] == "ai-sdk-gateway/4.0.103")
     #expect(body["batchId"]?.stringValue == "batch-42")
 
     let invalidTransport = RecordingTransport(response: jsonResponse(#"{"providerMetadata":{"trace":"missing-status"}}"#))
@@ -169,7 +169,7 @@ private final class WeeklyProviderGroupBReasoningModel: LanguageModel, @unchecke
         _ = try await model.generate(LanguageModelRequest(messages: [.user("Hi")]))
     }
     let request = try #require(await transport.requests().first)
-    #expect(request.headers["user-agent"] == "ai-sdk/groq/4.0.50")
+    #expect(request.headers["user-agent"] == "ai-sdk-groq/4.0.54")
 }
 
 @Test func WeeklyProviderGroupB20260927OpenResponsesCustomToolsAndRegexNormalization() async throws {
@@ -310,7 +310,7 @@ private final class WeeklyProviderGroupBReasoningModel: LanguageModel, @unchecke
     #expect(written.text == "written answer")
     #expect(written.content == [.text("written answer")])
     let request = try #require(await transport.requests().first)
-    #expect(request.headers["user-agent"] == "ai-sdk/openai/4.0.78")
+    #expect(request.headers["user-agent"] == "ai-sdk-openai/4.0.83")
 
     let responsesTransport = RecordingTransport(response: jsonResponse(#"{"id":"resp-sol","status":"completed","output_text":"done"}"#))
     let responsesProvider = try AIProviders.openAI(settings: ProviderSettings(apiKey: "openai-key", transport: responsesTransport))
@@ -359,7 +359,7 @@ private final class WeeklyProviderGroupBReasoningModel: LanguageModel, @unchecke
     let agentRequest = try #require(await agentTransport.requests().first)
     let agentBody = try decodeJSONBody(try #require(agentRequest.body))
     #expect(agentRequest.url.absoluteString == "https://api.perplexity.ai/v1/agent")
-    #expect(agentRequest.headers["user-agent"] == "ai-sdk/perplexity/5.0.1")
+    #expect(agentRequest.headers["user-agent"] == "ai-sdk-perplexity/5.0.5")
     #expect(agentBody["preset"]?.stringValue == "fast")
     #expect(agentBody["model"] == nil)
     #expect(agentBody["max_steps"]?.intValue == 4)
@@ -437,7 +437,7 @@ private final class WeeklyProviderGroupBReasoningModel: LanguageModel, @unchecke
     let request = try #require(await transport.requests().first)
     let body = try decodeJSONBody(try #require(request.body))
     #expect(request.url.absoluteString == "https://api.quiver.ai/v1/responses")
-    #expect(request.headers["user-agent"] == "ai-sdk/quiverai/2.0.50")
+    #expect(request.headers["user-agent"] == "ai-sdk-quiverai/2.0.54")
     #expect(body["tools"]?[0]?["type"]?.stringValue == "custom")
     #expect(body["reasoning"]?["effort"]?.stringValue == "xhigh")
     #expect(body["reasoning"]?["summary"]?.stringValue == "auto")
@@ -559,7 +559,7 @@ private final class WeeklyProviderGroupBReasoningModel: LanguageModel, @unchecke
     ))
     let requests = await transport.requests()
     let body = try decodeJSONBody(try #require(requests.first?.body))
-    #expect(requests.first?.headers["user-agent"] == "ai-sdk/xai/5.0.10")
+    #expect(requests.first?.headers["user-agent"] == "ai-sdk-xai/5.0.14")
     #expect(body["generate_audio"]?.boolValue == true)
     #expect(body["keyframes"]?[0]?["image"]?["url"]?.stringValue == "https://example.com/key.png")
     #expect(body["keyframes"]?[0]?["timestamp_s"]?.intValue == 2)

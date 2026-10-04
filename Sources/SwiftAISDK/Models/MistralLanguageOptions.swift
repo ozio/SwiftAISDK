@@ -80,18 +80,24 @@ func mistralReasoningEffort(_ reasoning: String?, warnings: inout [AIWarning]) -
     ).map(JSONValue.string)
 }
 
-func mistralMessages(_ messages: [AIMessage], responseFormat: JSONValue?) -> [AIMessage] {
+func mistralMessages(_ messages: [AIMessage], responseFormat: JSONValue?, structuredOutputs: Bool = true) -> [AIMessage] {
     guard responseFormat?["type"]?.stringValue == "json",
-          responseFormat?["schema"] == nil else {
+          !structuredOutputs || responseFormat?["schema"] == nil else {
         return messages
     }
+    let instruction: String
+    if let schema = responseFormat?["schema"], let schemaString = openAIResponsesJSONString(schema) {
+        instruction = "JSON schema:\n\(schemaString)\nYou MUST answer with a JSON object that matches the JSON schema above."
+    } else {
+        instruction = "You MUST answer with JSON."
+    }
     if let first = messages.first, first.role == .system {
-        let system = [first.combinedText, "", "You MUST answer with JSON."]
+        let system = [first.combinedText, "", instruction]
             .filter { !$0.isEmpty }
             .joined(separator: "\n")
         return [AIMessage.system(system)] + Array(messages.dropFirst())
     }
-    return [AIMessage.system("You MUST answer with JSON.")] + messages
+    return [AIMessage.system(instruction)] + messages
 }
 
 func mistralResponseFormat(from value: JSONValue, options: [String: JSONValue]) -> JSONValue {

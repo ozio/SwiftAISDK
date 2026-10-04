@@ -84,7 +84,8 @@ public final class MistralTranscriptionModel: TranscriptionModel, @unchecked Sen
                 from: raw,
                 response: response,
                 modelID: raw["model"]?.stringValue ?? modelID
-            )
+            ),
+            usage: raw["usage"]?.objectValue
         )
     }
 }

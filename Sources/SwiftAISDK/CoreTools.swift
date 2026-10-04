@@ -649,6 +649,8 @@ public struct AITool: Sendable {
     public var deferLoading: Bool
     public var toolCaller: AIToolCallerDefinition?
     var toolSearchMarker: Bool
+    var toolSearchFunction: AIToolSearchFunction? = nil
+    var toolSearchMaxResults: Int = 5
     public var onInputStart: AIToolInputStartCallback?
     public var onInputDelta: AIToolInputDeltaCallback?
     public var onInputAvailable: AIToolInputAvailableCallback?
@@ -880,6 +882,31 @@ public func toolSearch(name: String = "toolSearch") -> AITool {
     )
     tool.toolSearchMarker = true
     return tool
+}
+
+public struct AIToolSearchCandidate: Equatable, Sendable {
+    public var name: String
+    public var description: String?
+    public init(name: String, description: String? = nil) { self.name = name; self.description = description }
+}
+
+public typealias AIToolSearchFunction = @Sendable (_ query: String, _ tools: [AIToolSearchCandidate]) async throws -> [String]
+
+public func toolSearch(name: String = "toolSearch", maxResults: Int, search: AIToolSearchFunction? = nil) throws -> AITool {
+    guard maxResults > 0, maxResults <= 9_007_199_254_740_991 else {
+        throw AIError.invalidArgument(argument: "maxResults", message: "maxResults must be a positive safe integer.")
+    }
+    var tool = toolSearch(name: name)
+    tool.toolSearchFunction = search
+    tool.toolSearchMaxResults = maxResults
+    let introduction = search == nil ? "Search for tools by keywords in their names and descriptions." : "Search for tools matching a query."
+    tool.description = "\(introduction) Returns up to \(maxResults == 5 ? "five" : String(maxResults)) matching tools. Matches become available on the next model step, after this execution finishes. Wait for their tool definitions before calling the discovered tools. If no tools match, try different keywords."
+    return tool
+}
+
+public func toolSearch(name: String = "toolSearch", search: @escaping AIToolSearchFunction) -> AITool {
+    // Five is always a valid limit.
+    try! toolSearch(name: name, maxResults: 5, search: search)
 }
 
 public struct AIStreamFile: Equatable, Hashable, Sendable {

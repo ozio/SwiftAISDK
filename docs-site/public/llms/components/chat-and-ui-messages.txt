@@ -9,12 +9,13 @@ Source URL: /components/chat-and-ui-messages/
 | Case | 10 |
 | Class | 1 |
 | Enumeration | 3 |
-| Function | 5 |
+| Function | 6 |
 | Initializer | 12 |
 | Instance Method | 19 |
 | Instance Property | 77 |
 | Protocol | 1 |
 | Structure | 10 |
+| Type Alias | 1 |
 | Type Method | 2 |
 
 ## Public symbols
@@ -38,6 +39,7 @@ Source URL: /components/chat-and-ui-messages/
 | Function | `convertToModelMessage(_:)` | `func convertToModelMessage(_ message: AIUIMessage) throws -> AIMessage` | [Sources/SwiftAISDK/AIUIMessageConversion.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/AIUIMessageConversion.swift) |
 | Function | `convertToModelMessages(_:)` | `func convertToModelMessages(_ messages: [AIUIMessage]) throws -> [AIMessage]` | [Sources/SwiftAISDK/AIUIMessageConversion.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/AIUIMessageConversion.swift) |
 | Function | `convertToModelMessages(_:ignoreIncompleteToolCalls:)` | `func convertToModelMessages(_ messages: [AIUIMessage], ignoreIncompleteToolCalls: Bool) throws -> [AIMessage]` | [Sources/SwiftAISDK/AIUIMessageConversion.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/AIUIMessageConversion.swift) |
+| Function | `convertToModelMessages(_:ignoreIncompleteToolCalls:convertDataPart:)` | `func convertToModelMessages(_ messages: [AIUIMessage], ignoreIncompleteToolCalls: Bool = false, convertDataPart: AIUIDataPartConverter?) throws -> [AIMessage]` | [Sources/SwiftAISDK/AIUIMessageConversion.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/AIUIMessageConversion.swift) |
 | Function | `safeValidateUIMessages(_:)` | `func safeValidateUIMessages(_ messages: [AIUIMessage]) -> AIUIMessageValidationResult` | [Sources/SwiftAISDK/AIUIMessageValidation.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/AIUIMessageValidation.swift) |
 | Function | `validateUIMessages(_:)` | `@discardableResult func validateUIMessages(_ messages: [AIUIMessage]) throws -> [AIUIMessage]` | [Sources/SwiftAISDK/AIUIMessageValidation.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/AIUIMessageValidation.swift) |
 | Initializer | `init(chatID:abortSignal:headers:body:metadata:)` | `init(chatID: String, abortSignal: AIAbortSignal? = nil, headers: [String : String] = [:], body: [String : JSONValue] = [:], metadata: JSONValue? = nil)` | [Sources/SwiftAISDK/AIChatTransport.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/AIChatTransport.swift) |
@@ -159,5 +161,6 @@ Source URL: /components/chat-and-ui-messages/
 | Structure | `AIUIMessageValidationIssue` | `struct AIUIMessageValidationIssue` | [Sources/SwiftAISDK/AIUIMessageValidation.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/AIUIMessageValidation.swift) |
 | Structure | `AIUIMessageValidationResult` | `struct AIUIMessageValidationResult` | [Sources/SwiftAISDK/AIUIMessageValidation.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/AIUIMessageValidation.swift) |
 | Structure | `DirectAIChatTransport` | `struct DirectAIChatTransport` | [Sources/SwiftAISDK/AIChatTransport.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/AIChatTransport.swift) |
+| Type Alias | `AIUIDataPartConverter` | `typealias AIUIDataPartConverter = @Sendable (AIUIDataPart) throws -> AIContentPart?` | [Sources/SwiftAISDK/AIUIMessageConversion.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/AIUIMessageConversion.swift) |
 | Type Method | `snapshots(from:messageID:terminateOnError:)` | `static func snapshots(from stream: AsyncThrowingStream<LanguageStreamPart, Error>, messageID: String = UUID().uuidString, terminateOnError: Bool = false) -> AsyncThrowingStream<AIUIMessage, Error>` | [Sources/SwiftAISDK/AIUIMessageStreamReducer.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/AIUIMessageStreamReducer.swift) |
 | Type Method | `snapshots(from:messageID:terminateOnError:originalMessage:onEnd:)` | `static func snapshots(from stream: AsyncThrowingStream<LanguageStreamPart, Error>, messageID: String = UUID().uuidString, terminateOnError: Bool = false, originalMessage: AIUIMessage? = nil, onEnd: (@Sendable (AIUIMessageStreamEndEvent) async -> Void)? = nil) -> AsyncThrowingStream<AIUIMessage, Error>` | [Sources/SwiftAISDK/AIUIMessageStreamReducer.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/AIUIMessageStreamReducer.swift) |

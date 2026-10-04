@@ -2,6 +2,26 @@
 
 Source URL: /core/tools/
 
+## Configurable tool discovery
+
+`toolSearch(maxResults:search:)` can rank deferred tools using an asynchronous
+callback. The callback sees eligible candidates; returned names are filtered
+against that set, deduplicated, and capped. Discovered tools become available
+on the next model step. A positive `maxResults` is required:
+
+```swift
+let search = try toolSearch(maxResults: 3) { query, candidates in
+    candidates.filter {
+        $0.name.localizedCaseInsensitiveContains(query)
+    }.map(\.name)
+}
+```
+
+Generic compatible servers may opt in to rich tool outputs through
+`AIProviders.openAICompatible(..., supportsMultiPartToolContent: true)` or
+`ProviderSettings.supportsMultiPartToolContent = true`. The default string
+representation is retained; opt in only when the server accepts content arrays.
+
 Tools let a model ask your Swift code to do discrete work, then continue with the tool result.
 
 ```swift title="Examples/Sources/Tools/main.swift"

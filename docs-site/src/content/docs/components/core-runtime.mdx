@@ -10,11 +10,11 @@ description: Public SwiftAISDK APIs for core runtime.
 | Case | 201 |
 | Class | 8 |
 | Enumeration | 49 |
-| Function | 63 |
+| Function | 65 |
 | Global Variable | 1 |
 | Initializer | 161 |
 | Instance Method | 158 |
-| Instance Property | 486 |
+| Instance Property | 490 |
 | Instance Subscript | 2 |
 | Operator | 1 |
 | Protocol | 26 |
@@ -293,6 +293,7 @@ description: Public SwiftAISDK APIs for core runtime.
 | Function | `cosineSimilarity(_:_:)` | `func cosineSimilarity(_ vector1: [Double], _ vector2: [Double]) throws -> Double` | [Sources/SwiftAISDK/CoreUtilities.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreUtilities.swift) |
 | Function | `cosineSimilarity(_:_:)` | `func cosineSimilarity(_ vector1: [Float], _ vector2: [Float]) throws -> Double` | [Sources/SwiftAISDK/CoreUtilities.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreUtilities.swift) |
 | Function | `createAgentUIStream(agent:uiMessages:options:messageID:)` | `func createAgentUIStream(agent: any AIAgent, uiMessages: [AIUIMessage], options: AIAgentCallOptions = AIAgentCallOptions(), messageID: String = UUID().uuidString) throws -> AsyncThrowingStream<AIUIMessage, Error>` | [Sources/SwiftAISDK/AIAgent.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/AIAgent.swift) |
+| Function | `createAgentUIStream(agent:uiMessages:options:messageID:convertDataPart:)` | `func createAgentUIStream(agent: any AIAgent, uiMessages: [AIUIMessage], options: AIAgentCallOptions = AIAgentCallOptions(), messageID: String = UUID().uuidString, convertDataPart: AIUIDataPartConverter?) throws -> AsyncThrowingStream<AIUIMessage, Error>` | [Sources/SwiftAISDK/AIAgent.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/AIAgent.swift) |
 | Function | `createAsyncIterableStream(_:)` | `func createAsyncIterableStream<Element>(_ source: AsyncThrowingStream<Element, Error>) -> AsyncThrowingStream<Element, Error> where Element : Sendable` | [Sources/SwiftAISDK/CoreUtilities.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreUtilities.swift) |
 | Function | `createIdGenerator(prefix:separator:size:alphabet:)` | `func createIdGenerator(prefix: String? = nil, separator: String = "-", size: Int = 16, alphabet: String = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz") -> AIIdGenerator` | [Sources/SwiftAISDK/CoreUtilities.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreUtilities.swift) |
 | Function | `createStitchableStream()` | `func createStitchableStream<Element>() -> AIStitchableStream<Element> where Element : Sendable` | [Sources/SwiftAISDK/CoreUtilities.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreUtilities.swift) |
@@ -311,6 +312,7 @@ description: Public SwiftAISDK APIs for core runtime.
 | Function | `isParsableJSON(_:)` | `func isParsableJSON(_ input: String) -> Bool` | [Sources/SwiftAISDK/JSONParsing.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/JSONParsing.swift) |
 | Function | `isToolOutputErrorUIPart(_:)` | `func isToolOutputErrorUIPart(_ part: AIUIMessagePart) -> Bool` | [Sources/SwiftAISDK/CoreUIMessages.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreUIMessages.swift) |
 | Function | `isURLSupported(mediaType:url:supportedURLs:)` | `func isURLSupported(mediaType: String, url: String, supportedURLs: [String : [AISupportedURLPattern]]) -> Bool` | [Sources/SwiftAISDK/CoreProtocols.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreProtocols.swift) |
+| Function | `isValidHostnamePart(_:)` | `func isValidHostnamePart(_ value: String) -> Bool` | [Sources/SwiftAISDK/HostnameValidation.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/HostnameValidation.swift) |
 | Function | `mapReasoningToProviderBudget(reasoning:maxOutputTokens:maxReasoningBudget:minReasoningBudget:budgetPercentages:warnings:)` | `func mapReasoningToProviderBudget(reasoning: String, maxOutputTokens: Int, maxReasoningBudget: Int, minReasoningBudget: Int = 1024, budgetPercentages: [String : Double] = [         "minimal": 0.02,         "low": 0.1,         "medium": 0.3,         "high": 0.6,         "xhigh": 0.9     ], warnings: inout [AIWarning]) -> Int?` | [Sources/SwiftAISDK/CoreUtilities.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreUtilities.swift) |
 | Function | `mapReasoningToProviderEffort(reasoning:effortMap:warnings:)` | `func mapReasoningToProviderEffort(reasoning: String, effortMap: [String : String], warnings: inout [AIWarning]) -> String?` | [Sources/SwiftAISDK/CoreUtilities.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreUtilities.swift) |
 | Function | `mergeAbortSignals(_:)` | `@discardableResult func mergeAbortSignals(_ signals: AIAbortSignal?...) -> AIAbortSignal?` | [Sources/SwiftAISDK/CoreAbort.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreAbort.swift) |
@@ -1076,6 +1078,10 @@ description: Public SwiftAISDK APIs for core runtime.
 | Instance Property | `supportedURLs` | `var supportedURLs: [String : [AISupportedURLPattern]] { get }` | [Sources/SwiftAISDK/CoreBatch.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreBatch.swift) |
 | Instance Property | `supportedURLs` | `var supportedURLs: [String : [AISupportedURLPattern]] { get }` | [Sources/SwiftAISDK/CoreProtocols.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreProtocols.swift) |
 | Instance Property | `supportedURLs` | `var supportedURLs: [String : [AISupportedURLPattern]] { get }` | [Sources/SwiftAISDK/CoreProtocols.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreProtocols.swift) |
+| Instance Property | `supportsFileInputs` | `var supportsFileInputs: Bool? { get async }` | [Sources/SwiftAISDK/CoreProtocols.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreProtocols.swift) |
+| Instance Property | `supportsFileInputs` | `var supportsFileInputs: Bool? { get }` | [Sources/SwiftAISDK/CoreProtocols.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreProtocols.swift) |
+| Instance Property | `supportsMaskInputs` | `var supportsMaskInputs: Bool? { get async }` | [Sources/SwiftAISDK/CoreProtocols.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreProtocols.swift) |
+| Instance Property | `supportsMaskInputs` | `var supportsMaskInputs: Bool? { get }` | [Sources/SwiftAISDK/CoreProtocols.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreProtocols.swift) |
 | Instance Property | `supportsUnaryVideoGeneration` | `var supportsUnaryVideoGeneration: Bool { get }` | [Sources/SwiftAISDK/CoreProtocols.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreProtocols.swift) |
 | Instance Property | `supportsUnaryVideoGeneration` | `var supportsUnaryVideoGeneration: Bool { get }` | [Sources/SwiftAISDK/CoreProtocols.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreProtocols.swift) |
 | Instance Property | `telemetry` | `var telemetry: Telemetry.Options?` | [Sources/SwiftAISDK/AIAgent.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/AIAgent.swift) |

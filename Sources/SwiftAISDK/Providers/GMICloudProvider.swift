@@ -1,6 +1,6 @@
 import Foundation
 
-public let gmiCloudProviderVersion = "3.0.28"
+public let gmiCloudProviderVersion = "3.0.33"
 
 public func createGMICloud(settings: ProviderSettings = ProviderSettings()) throws -> GMICloudProvider {
     try GMICloudProvider(settings: settings)
@@ -80,7 +80,7 @@ private func gmiCloudHeaders(settings: ProviderSettings) throws -> [String: Stri
     if !headers.keys.contains(where: { $0.caseInsensitiveCompare("authorization") == .orderedSame }) {
         headers["Authorization"] = "Bearer \(apiKey)"
     }
-    return withUserAgentSuffix(headers, "ai-sdk/gmicloud/\(gmiCloudProviderVersion)")
+    return withUserAgentSuffix(headers, "ai-sdk-gmicloud/\(gmiCloudProviderVersion)")
 }
 
 /// GMI's edge stores the backend engine diagnostic as JSON inside

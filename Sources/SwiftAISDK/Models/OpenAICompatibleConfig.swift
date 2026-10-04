@@ -355,6 +355,8 @@ public enum AuthorizationStyle: Equatable, Hashable, Sendable {
 }
 
 public struct ProviderSettings: Sendable {
+    /// Opt in only when the compatible server accepts rich tool-result content.
+    public var supportsMultiPartToolContent: Bool = false
     public var apiKey: String?
     public var authToken: String?
     public var baseURL: String?
@@ -494,6 +496,7 @@ struct ModelHTTPConfig: @unchecked Sendable {
     var transport: any AITransport
     var includeUsage: Bool
     var queryParams: [String: String]
+    var supportsMultiPartToolContent: Bool
     var supportsStructuredOutputs: Bool
     var maxEmbeddingsPerCall: Int?
     var strictResponseInput: Bool
@@ -521,6 +524,7 @@ struct ModelHTTPConfig: @unchecked Sendable {
         userAgentSuffix: String? = nil,
         includeUsage: Bool = false,
         queryParams: [String: String] = [:],
+        supportsMultiPartToolContent: Bool = false,
         supportsStructuredOutputs: Bool = false,
         maxEmbeddingsPerCall: Int? = nil,
         strictResponseInput: Bool = false,
@@ -548,6 +552,7 @@ struct ModelHTTPConfig: @unchecked Sendable {
         self.transport = transport
         self.includeUsage = includeUsage
         self.queryParams = queryParams
+        self.supportsMultiPartToolContent = supportsMultiPartToolContent
         self.supportsStructuredOutputs = supportsStructuredOutputs
         self.maxEmbeddingsPerCall = maxEmbeddingsPerCall
         self.strictResponseInput = strictResponseInput
@@ -645,6 +650,7 @@ struct ModelHTTPConfig: @unchecked Sendable {
             userAgentSuffix: userAgentSuffix,
             includeUsage: includeUsage,
             queryParams: queryParams,
+            supportsMultiPartToolContent: supportsMultiPartToolContent,
             supportsStructuredOutputs: supportsStructuredOutputs,
             maxEmbeddingsPerCall: maxEmbeddingsPerCall,
             strictResponseInput: strictResponseInput,
@@ -675,6 +681,7 @@ struct ModelHTTPConfig: @unchecked Sendable {
             userAgentSuffix: userAgentSuffix,
             includeUsage: includeUsage,
             queryParams: queryParams,
+            supportsMultiPartToolContent: supportsMultiPartToolContent,
             supportsStructuredOutputs: supportsStructuredOutputs,
             maxEmbeddingsPerCall: maxEmbeddingsPerCall,
             strictResponseInput: strictResponseInput,
@@ -705,6 +712,7 @@ struct ModelHTTPConfig: @unchecked Sendable {
             userAgentSuffix: userAgentSuffix,
             includeUsage: includeUsage,
             queryParams: queryParams,
+            supportsMultiPartToolContent: supportsMultiPartToolContent,
             supportsStructuredOutputs: supportsStructuredOutputs,
             maxEmbeddingsPerCall: maxEmbeddingsPerCall,
             strictResponseInput: strictResponseInput,
@@ -735,6 +743,7 @@ struct ModelHTTPConfig: @unchecked Sendable {
             userAgentSuffix: userAgentSuffix,
             includeUsage: includeUsage,
             queryParams: queryParams,
+            supportsMultiPartToolContent: supportsMultiPartToolContent,
             supportsStructuredOutputs: supportsStructuredOutputs,
             maxEmbeddingsPerCall: maxEmbeddingsPerCall,
             strictResponseInput: strictResponseInput,

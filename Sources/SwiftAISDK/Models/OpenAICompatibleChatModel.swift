@@ -315,6 +315,7 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
                 (openAICompatibleProviderRoot(providerID) == "moonshotai" &&
                     moonshotSupportsStructuredOutputs(modelID: modelID)),
             usesGenericOpenAICompatibleProviderOptions: config.usesGenericOpenAICompatibleProviderOptions,
+            supportsMultiPartToolContent: config.supportsMultiPartToolContent,
             warnings: &warnings
         )
         if stream, config.includeUsage {
@@ -367,6 +368,7 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
         openAIProviderOptionsRoot: String?,
         supportsStructuredOutputs: Bool,
         usesGenericOpenAICompatibleProviderOptions: Bool,
+        supportsMultiPartToolContent: Bool,
         warnings: inout [AIWarning]
     ) throws -> [String: JSONValue] {
         var extraBody: [String: JSONValue]
@@ -432,7 +434,8 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
                         providerID,
                         providerOptions: request.providerOptions
                     ),
-                    systemRole: message.role == .system ? systemMessageMode : nil
+                    systemRole: message.role == .system ? systemMessageMode : nil,
+                    supportsMultiPartToolContent: supportsMultiPartToolContent
                 ))
             }
             messages = converted
@@ -534,12 +537,22 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
         _ message: AIMessage,
         providerID: String,
         providerOptionsKey: String? = nil,
-        systemRole: String? = nil
+        systemRole: String? = nil,
+        supportsMultiPartToolContent: Bool = false
     ) throws -> JSONValue {
         if message.role == .tool,
            let result = message.content.compactMap({ part -> AIToolResult? in
                if case let .toolResult(result) = part { result } else { nil }
            }).first {
+            let output = result.modelOutput ?? result.result
+            if supportsMultiPartToolContent, output["type"]?.stringValue == "content" {
+                return .object([
+                    "role": .string("tool"), "tool_call_id": .string(result.toolCallID),
+                    "content": .array(try (output["value"]?.arrayValue ?? []).enumerated().map { index, part in
+                        try openAICompatibleToolContentPart(part, index: index, providerID: providerID, providerOptionsKey: providerOptionsKey)
+                    })
+                ])
+            }
             return .object([
                 "role": .string("tool"),
                 "tool_call_id": .string(result.toolCallID),
@@ -654,6 +667,37 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
             "content": .array(parts)
         ])
     }
+}
+
+private func openAICompatibleToolContentPart(_ part: JSONValue, index: Int, providerID: String, providerOptionsKey: String?) throws -> JSONValue {
+    let namespace = providerOptionsKey ?? openAICompatibleProviderMetadataNamespace(providerID)
+    let metadata = part["providerOptions"]?[namespace]?.objectValue ?? part["providerOptions"]?["openaiCompatible"]?.objectValue ?? [:]
+    func withMetadata(_ value: [String: JSONValue]) -> JSONValue {
+        .object(value.merging(metadata) { _, new in new })
+    }
+    if part["type"]?.stringValue == "text" {
+        return withMetadata(["type": .string("text"), "text": part["text"] ?? .string("")])
+    }
+    guard part["type"]?.stringValue == "file", let mediaType = part["mediaType"]?.stringValue else {
+        throw AIError.invalidArgument(argument: "toolResult.content", message: "Unsupported custom tool content part.")
+    }
+    let data = part["data"]
+    if data?["type"]?.stringValue == "url", let url = data?["url"]?.stringValue {
+        if mediaType.hasPrefix("image/") || mediaType.hasPrefix("video/") {
+            let type = mediaType.hasPrefix("image/") ? "image_url" : "video_url"
+            return withMetadata(["type": .string(type), type: .object(["url": .string(url)])])
+        }
+        if mediaType.hasPrefix("text/") { return withMetadata(["type": .string("text"), "text": .string(url)]) }
+        throw AIError.invalidArgument(argument: "toolResult.content", message: "Audio and PDF tool content cannot use URLs.")
+    }
+    guard data?["type"]?.stringValue == "data", let encoded = data?["data"]?.stringValue,
+          let bytes = Data(base64Encoded: encoded) else {
+        throw AIError.invalidArgument(argument: "toolResult.content", message: "Tool files require base64 data or a supported URL; text and provider-reference files are unsupported.")
+    }
+    var converted = try chatFilePart(mimeType: mediaType, data: bytes, filename: part["filename"]?.stringValue,
+                                     providerMetadata: [:], index: index, providerID: providerID, providerOptionsKey: providerOptionsKey).objectValue ?? [:]
+    converted.merge(metadata) { _, new in new }
+    return .object(converted)
 }
 
 private func isValidNullableChatMessage(_ value: JSONValue?) -> Bool {

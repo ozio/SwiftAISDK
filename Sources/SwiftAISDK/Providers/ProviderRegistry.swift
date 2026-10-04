@@ -11,7 +11,7 @@ public enum AIProviders {
         if let project = settings.project {
             settings.headers["OpenAI-Project"] = settings.headers["OpenAI-Project"] ?? project
         }
-        return try OpenAICompatibleProvider(providerID: providerID, defaultBaseURL: "https://api.openai.com/v1", authorization: .bearer(environmentVariables: ["OPENAI_API_KEY"]), supportedCapabilities: [.language, .completion, .embedding, .image, .transcription, .speech], settings: settings, routesLikeOpenAI: true, userAgentSuffix: "ai-sdk/openai/4.0.78", supportsProviderOwnedBatch: true)
+        return try OpenAICompatibleProvider(providerID: providerID, defaultBaseURL: "https://api.openai.com/v1", authorization: .bearer(environmentVariables: ["OPENAI_API_KEY"]), supportedCapabilities: [.language, .completion, .embedding, .image, .transcription, .speech], settings: settings, routesLikeOpenAI: true, userAgentSuffix: "ai-sdk-openai/4.0.83", supportsProviderOwnedBatch: true)
     }
 
     public static func anthropic(settings: ProviderSettings = ProviderSettings()) throws -> AnthropicProvider {
@@ -42,7 +42,7 @@ public enum AIProviders {
         }
         return try OpenAICompatibleProvider(
             providerID: "googleVertex.maas",
-            defaultBaseURL: googleVertexOpenAIBaseURL(project: project, location: location),
+            defaultBaseURL: settings.baseURL ?? googleVertexOpenAIBaseURL(project: project, location: location),
             authorization: .bearer(environmentVariables: ["GOOGLE_VERTEX_ACCESS_TOKEN", "GOOGLE_ACCESS_TOKEN"]),
             supportedCapabilities: [.language, .completion, .embedding, .image],
             settings: settings
@@ -62,7 +62,7 @@ public enum AIProviders {
     public static func googleVertexAnthropic(project: String? = nil, location: String? = nil, settings: ProviderSettings = ProviderSettings()) throws -> OpenAICompatibleProvider {
         try OpenAICompatibleProvider(
             providerID: "googleVertex.anthropic",
-            defaultBaseURL: googleVertexAnthropicBaseURL(project: project, location: location),
+            defaultBaseURL: settings.baseURL ?? googleVertexAnthropicBaseURL(project: project, location: location),
             authorization: .bearer(environmentVariables: ["GOOGLE_VERTEX_ACCESS_TOKEN", "GOOGLE_ACCESS_TOKEN"]),
             supportedCapabilities: [.language],
             settings: settings
@@ -71,6 +71,10 @@ public enum AIProviders {
 
     public static func azure(resourceName: String? = nil, apiVersion: String = "v1", useDeploymentBasedURLs: Bool = false, tokenProvider: AzureOpenAITokenProvider? = nil, settings: ProviderSettings = ProviderSettings()) throws -> AzureOpenAIProvider {
         try AzureOpenAIProvider(resourceName: resourceName, apiVersion: apiVersion, useDeploymentBasedURLs: useDeploymentBasedURLs, tokenProvider: tokenProvider, settings: settings)
+    }
+
+    public static func azure(resourceName: String? = nil, apiVersion: String = "v1", useDeploymentBasedURLs: Bool = false, tokenProvider: AzureOpenAITokenProvider? = nil, settings: ProviderSettings = ProviderSettings(), audioSettings: AzureOpenAIAudioSettings) throws -> AzureOpenAIProvider {
+        try AzureOpenAIProvider(resourceName: resourceName, apiVersion: apiVersion, useDeploymentBasedURLs: useDeploymentBasedURLs, tokenProvider: tokenProvider, settings: settings, audioSettings: audioSettings)
     }
 
     public static func gateway(
@@ -107,22 +111,36 @@ public enum AIProviders {
         maxEmbeddingsPerCall: Int? = nil,
         transformRequestBody: (@Sendable ([String: JSONValue]) -> [String: JSONValue])? = nil
     ) throws -> OpenAICompatibleProvider {
-        try OpenAICompatibleProvider(
+        try openAICompatible(name: name, baseURL: baseURL, apiKey: apiKey, headers: headers, queryParams: queryParams,
+                             transport: transport, includeUsage: includeUsage, supportsStructuredOutputs: supportsStructuredOutputs,
+                             maxEmbeddingsPerCall: maxEmbeddingsPerCall, transformRequestBody: transformRequestBody,
+                             supportsMultiPartToolContent: false)
+    }
+
+    public static func openAICompatible(
+        name: String,
+        baseURL: String,
+        apiKey: String? = nil,
+        headers: [String: String] = [:],
+        queryParams: [String: String] = [:],
+        transport: any AITransport = URLSessionTransport.shared,
+        includeUsage: Bool = false,
+        supportsStructuredOutputs: Bool = false,
+        maxEmbeddingsPerCall: Int? = nil,
+        transformRequestBody: (@Sendable ([String: JSONValue]) -> [String: JSONValue])? = nil,
+        supportsMultiPartToolContent: Bool
+    ) throws -> OpenAICompatibleProvider {
+        var settings = ProviderSettings(apiKey: apiKey, headers: headers, queryParams: queryParams, transport: transport,
+                                        includeUsage: includeUsage, supportsStructuredOutputs: supportsStructuredOutputs,
+                                        maxEmbeddingsPerCall: maxEmbeddingsPerCall, transformRequestBody: transformRequestBody)
+        settings.supportsMultiPartToolContent = supportsMultiPartToolContent
+        return try OpenAICompatibleProvider(
             providerID: name,
             defaultBaseURL: baseURL,
             authorization: apiKey == nil ? .none : .bearer(environmentVariables: []),
             supportedCapabilities: [.language, .completion, .embedding, .image],
-            settings: ProviderSettings(
-                apiKey: apiKey,
-                headers: headers,
-                queryParams: queryParams,
-                transport: transport,
-                includeUsage: includeUsage,
-                supportsStructuredOutputs: supportsStructuredOutputs,
-                maxEmbeddingsPerCall: maxEmbeddingsPerCall,
-                transformRequestBody: transformRequestBody
-            ),
-            userAgentSuffix: "ai-sdk/openai-compatible/3.0.57",
+            settings: settings,
+            userAgentSuffix: "ai-sdk-openai-compatible/3.0.62",
             usesOpenAICompatibleSurfaceIDs: true
         )
     }
@@ -281,7 +299,7 @@ public enum AIProviders {
             headers: headers,
             transport: settings.transport,
             dynamicHeaders: dynamicHeaders,
-            userAgentSuffix: userAgentSuffix ?? "ai-sdk/open-responses/2.0.54",
+            userAgentSuffix: userAgentSuffix ?? "ai-sdk-open-responses/2.0.58",
             includeUsage: settings.includeUsage,
             queryParams: settings.queryParams,
             supportsStructuredOutputs: structuredOutputs,
@@ -401,6 +419,7 @@ private func googleVertexOpenAIBaseURL(project: String?, location: String?) thro
         throw AIError.invalidURL("Google Vertex OpenAI-compatible mode requires project or GOOGLE_VERTEX_PROJECT.")
     }
     let location = location ?? environmentValue(["GOOGLE_VERTEX_LOCATION"]) ?? "global"
+    try validateHostnamePart(location, argument: "location")
     let host = googleVertexRegionalHost(location: location)
     return "https://\(host)/v1/projects/\(project)/locations/\(location)/endpoints/openapi"
 }
@@ -426,6 +445,7 @@ private func googleVertexAnthropicBaseURL(project: String?, location: String?) t
         throw AIError.invalidURL("Google Vertex Anthropic mode requires project or GOOGLE_VERTEX_PROJECT.")
     }
     let location = location ?? environmentValue(["GOOGLE_VERTEX_LOCATION"]) ?? "global"
+    try validateHostnamePart(location, argument: "location")
     let host = googleVertexRegionalHost(location: location)
     return "https://\(host)/v1/projects/\(project)/locations/\(location)/publishers/anthropic/models"
 }
@@ -442,10 +462,13 @@ private func googleVertexRegionalHost(location: String) -> String {
 
 private func perplexityHeaders(settings: ProviderSettings) throws -> [String: String] {
     var headers = settings.headers
+    if !headers.keys.contains(where: { $0.lowercased() == "x-pplx-integration" }) {
+        headers["X-Pplx-Integration"] = "vercel-ai-sdk"
+    }
     let key = settings.apiKey ?? environmentValue(["PERPLEXITY_API_KEY"])
     guard let key else {
         throw AIError.missingAPIKey(provider: "perplexity", environmentVariables: ["PERPLEXITY_API_KEY"])
     }
     headers["Authorization"] = headers["Authorization"] ?? "Bearer \(key)"
-    return withUserAgentSuffix(headers, "ai-sdk/perplexity/5.0.1")
+    return withUserAgentSuffix(headers, "ai-sdk-perplexity/5.0.5")
 }

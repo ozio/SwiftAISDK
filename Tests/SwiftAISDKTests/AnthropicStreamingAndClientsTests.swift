@@ -39,7 +39,7 @@ import Testing
     #expect(request.url.absoluteString == "https://api.anthropic.com/v1/files")
     #expect(request.headers["x-api-key"] == "claude-key")
     #expect(request.headers["anthropic-beta"] == "files-api-2025-04-14")
-    #expect(request.headers["user-agent"] == "ai-sdk/anthropic/4.0.65")
+    #expect(request.headers["user-agent"] == "ai-sdk-anthropic/4.0.71")
     let bodyText = String(data: try #require(request.body), encoding: .utf8) ?? ""
     #expect(bodyText.contains("name=\"file\"; filename=\"data.pdf\""))
     #expect(bodyText.contains("Content-Type: application/pdf"))
@@ -115,7 +115,7 @@ import Testing
     #expect(requests[0].url.absoluteString == "https://api.anthropic.com/v1/skills")
     #expect(requests[0].headers["x-api-key"] == "claude-key")
     #expect(requests[0].headers["anthropic-beta"] == "skills-2025-10-02")
-    #expect(requests[0].headers["user-agent"] == "ai-sdk/anthropic/4.0.65")
+    #expect(requests[0].headers["user-agent"] == "ai-sdk-anthropic/4.0.71")
     #expect(requests[0].headers["content-type"]?.hasPrefix("multipart/form-data; boundary=SwiftAISDK-") == true)
     let bodyText = String(data: try #require(requests[0].body), encoding: .utf8) ?? ""
     #expect(bodyText.contains("name=\"display_title\""))
@@ -125,7 +125,7 @@ import Testing
     #expect(requests[1].method == "GET")
     #expect(requests[1].url.absoluteString == "https://api.anthropic.com/v1/skills/skill_01/versions/1772078378207930")
     #expect(requests[1].headers["anthropic-beta"] == "skills-2025-10-02")
-    #expect(requests[1].headers["user-agent"] == "ai-sdk/anthropic/4.0.65")
+    #expect(requests[1].headers["user-agent"] == "ai-sdk-anthropic/4.0.71")
 }
 
 @Test func anthropicSkillsOmitDisplayTitleWhenNotProvidedLikeUpstream() async throws {
@@ -208,12 +208,12 @@ import Testing
     #expect(requests[0].url.absoluteString == "https://aws-external-anthropic.us-west-2.api.aws/v1/files")
     #expect(requests[0].headers["x-api-key"] == "aws-api-key")
     #expect(requests[0].headers["anthropic-beta"] == "files-api-2025-04-14")
-    #expect(requests[0].headers["user-agent"] == "ai-sdk/anthropic-aws/2.0.57")
+    #expect(requests[0].headers["user-agent"] == "ai-sdk-anthropic-aws/2.0.63")
     #expect(requests[1].url.absoluteString == "https://aws-external-anthropic.us-west-2.api.aws/v1/skills")
     #expect(requests[1].headers["anthropic-beta"] == "skills-2025-10-02")
-    #expect(requests[1].headers["user-agent"] == "ai-sdk/anthropic-aws/2.0.57")
+    #expect(requests[1].headers["user-agent"] == "ai-sdk-anthropic-aws/2.0.63")
     #expect(requests[2].url.absoluteString == "https://aws-external-anthropic.us-west-2.api.aws/v1/skills/skill_aws/versions/v1")
-    #expect(requests[2].headers["user-agent"] == "ai-sdk/anthropic-aws/2.0.57")
+    #expect(requests[2].headers["user-agent"] == "ai-sdk-anthropic-aws/2.0.63")
 }
 
 @Test func anthropicLanguageStreamsMessagesEvents() async throws {
@@ -544,10 +544,10 @@ private final class AnthropicInvalidSequenceGatedStreamingTransport: AIStreaming
     #expect(outputTokens == 3)
 }
 
-@Test func anthropicLanguageStreamIgnoresFallbackBlockAndMapsStopDetails() async throws {
+@Test func anthropicLanguageStreamPreservesFallbackBlockAndMapsStopDetails() async throws {
     let transport = RecordingTransport(response: sseResponse("""
     event: content_block_start
-    data: {"type":"content_block_start","index":0,"content_block":{"type":"fallback","message":"primary failed"}}
+    data: {"type":"content_block_start","index":0,"content_block":{"type":"fallback","from":{"model":"claude-sonnet-4-6"},"to":{"model":"claude-fable-5"}}}
 
     event: content_block_delta
     data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"fallback answer"}}
@@ -564,18 +564,23 @@ private final class AnthropicInvalidSequenceGatedStreamingTransport: AIStreaming
 
     var text: [String] = []
     var finishMetadata: [String: JSONValue] = [:]
+    var fallback: JSONValue?
     for try await part in model.stream(LanguageModelRequest(messages: [.user("Hi")])) {
         switch part {
         case let .textDeltaPart(_, delta, _):
             text.append(delta)
         case let .finishMetadata(_, _, providerMetadata):
             finishMetadata = providerMetadata
+        case let .custom(value, providerMetadata) where value["kind"] == "anthropic.fallback":
+            fallback = providerMetadata["anthropic"]
         default:
             break
         }
     }
 
     #expect(text == ["fallback answer"])
+    #expect(fallback?["from"]?["model"] == "claude-sonnet-4-6")
+    #expect(fallback?["to"]?["model"] == "claude-fable-5")
     #expect(finishMetadata["anthropic"]?["stopDetails"]?["recommendedModel"]?.stringValue == "claude-fable-5")
 }
 

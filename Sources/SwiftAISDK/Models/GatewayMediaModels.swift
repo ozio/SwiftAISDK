@@ -353,7 +353,8 @@ public final class GatewaySpeechModel: SpeechModel, @unchecked Sendable {
             warnings: gatewayWarnings(from: raw["warnings"]),
             providerMetadata: gatewayProviderMetadata(raw["providerMetadata"] ?? raw["provider_metadata"]),
             requestMetadata: AIRequestMetadata(body: .object(body), headers: request.headers),
-            responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
+            responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID),
+            usage: raw["usage"]?.objectValue
         )
     }
 }
@@ -403,7 +404,8 @@ public final class GatewayTranscriptionModel:
             warnings: gatewayWarnings(from: raw["warnings"]),
             providerMetadata: gatewayProviderMetadata(raw["providerMetadata"] ?? raw["provider_metadata"]),
             requestMetadata: AIRequestMetadata(body: .object(body), headers: request.headers),
-            responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
+            responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID),
+            usage: raw["usage"]?.objectValue
         )
     }
 }

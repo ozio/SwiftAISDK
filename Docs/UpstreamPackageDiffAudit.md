@@ -1,6 +1,6 @@
 # Upstream Package Diff Audit
 
-Snapshot date: 2026-09-27
+Snapshot date: 2026-10-04
 
 This audit records the published npm tarball comparison used by the weekly
 SwiftAISDK upstream check. Every changed tracked package was packed at both the
@@ -14,11 +14,152 @@ Status meanings:
   architecture, or only expands string model IDs accepted by Swift.
 - `deferred`: portable behavior was audited but remains for a dedicated
   provider pass or a shared public Swift design.
+- `identity-only`: request-independent user-agent identity normalization and version synchronization.
 - `version-only`: published source behavior is unchanged apart from dependency,
   build, changelog, or version propagation.
 - `out-of-scope`: the changed package is a framework/product surface that this
   provider-facing Swift package does not expose.
 - `current`: the tracked package has no published version drift.
+
+## 2026-10-04 Weekly Audit
+
+Audited 52 tracked packages: 50 changed and LMNT/Vercel stayed current. 19 identity-only, 27 ported, 2 version-only, 2 current, 1 deferred, 1 out-of-scope. Fifty old/latest pairs plus 37 untracked scoped packages produced 137 integrity-verified published tarballs. Upstream test inventory is `vercel/ai@15f1a4d0531ac641a4a4d9cc602c0536c1906834`, with 976 executable test/spec files. Published package source is the behavior authority; the monorepo inventory is the fixture review checklist.
+
+| Package | Reference -> latest | Decision and implemented behavior | Verification |
+| --- | --- | --- | --- |
+| `@ai-sdk/alibaba` | `2.0.56 -> 2.0.60` | `identity-only` — Published implementation changes only the provider user-agent prefix to ai-sdk-alibaba/<version>; request builders, options, parsers, streaming and errors are unchanged. Exact header assertions and owned versions are synchronized. | Updated existing header assertions where applicable; full `swift test` |
+| `@ai-sdk/amazon-bedrock` | `5.0.97 -> 5.0.105` | `ported` — Nova 2 Lite high thinking omits maxTokens with a warning; string-valued requestMetadata; generated-host region validation for Bedrock, Anthropic and Mantle; Nova Canvas image capabilities. Existing Swift dictionaries cover header normalization; open model-ID strings cover Sonnet 5.5. | Focused weekly core/provider tests and full `swift test` |
+| `@ai-sdk/anthropic` | `4.0.65 -> 4.0.71` | `ported` — Sonnet 5.5 restrictions and between_tools thinking; validated, replayable fallback custom content in unary/stream/batch results; historical missing-caller normalization; toolset action retention and missing-action fallback; fallback blocks never receive cache control. | Focused weekly core/provider tests and full `swift test` |
+| `@ai-sdk/anthropic-aws` | `2.0.57 -> 2.0.63` | `ported` — Default generated-host region validation; versioned user-agent normalization. Existing Swift header dictionaries/authentication cover SigV4 header changes. | Focused weekly core/provider tests and full `swift test` |
+| `@ai-sdk/assemblyai` | `3.0.49 -> 3.0.53` | `identity-only` — Published implementation changes only the provider user-agent prefix to ai-sdk-assemblyai/<version>; request builders, options, parsers, streaming and errors are unchanged. Exact header assertions and owned versions are synchronized. | Updated existing header assertions where applicable; full `swift test` |
+| `@ai-sdk/azure` | `4.0.82 -> 4.0.90` | `ported` — MAI Voice 2/2.1 plus Flash Speech routing, escaped SSML, native formats/styles/locales and actionable errors; MAI Transcribe 1.5/2 multipart Speech parsing; cancellable MAI streaming PCM sessions with handshake/commit/close/error handling; separate audio hosts and Entra authentication. Azure image capability discovery stays unknown. | Focused weekly core/provider tests and full `swift test` |
+| `@ai-sdk/baseten` | `2.1.35 -> 2.1.40` | `identity-only` — Published implementation changes only the provider user-agent prefix to ai-sdk-baseten/<version>; request builders, options, parsers, streaming and errors are unchanged. Exact header assertions and owned versions are synchronized. | Updated existing header assertions where applicable; full `swift test` |
+| `@ai-sdk/black-forest-labs` | `2.0.50 -> 2.0.54` | `ported` — Published file/mask image-input capability tables; unknown model IDs remain nil. Existing language/video/request/parser behavior is unchanged. | Focused weekly core/provider tests and full `swift test` |
+| `@ai-sdk/bytedance` | `2.0.52 -> 2.0.56` | `version-only` — Published src (excluding version.ts) is byte-identical; synchronize owned version literals and ledger. Existing user-agent prefix is retained. | Updated existing header assertions where applicable; full `swift test` |
+| `@ai-sdk/cartesia` | `3.0.44 -> 3.0.48` | `identity-only` — Published implementation changes only the provider user-agent prefix to ai-sdk-cartesia/<version>; request builders, options, parsers, streaming and errors are unchanged. Exact header assertions and owned versions are synchronized. | Updated existing header assertions where applicable; full `swift test` |
+| `@ai-sdk/cerebras` | `3.0.57 -> 3.0.62` | `identity-only` — Published implementation changes only the provider user-agent prefix to ai-sdk-cerebras/<version>; request builders, options, parsers, streaming and errors are unchanged. Exact header assertions and owned versions are synchronized. | Updated existing header assertions where applicable; full `swift test` |
+| `@ai-sdk/cohere` | `4.0.50 -> 4.0.54` | `identity-only` — Published implementation changes only the provider user-agent prefix to ai-sdk-cohere/<version>; request builders, options, parsers, streaming and errors are unchanged. Exact header assertions and owned versions are synchronized. | Updated existing header assertions where applicable; full `swift test` |
+| `@ai-sdk/deepgram` | `3.1.20 -> 3.1.24` | `ported` — Transcription seconds and speech character usage preserved as provider-native JSON and exposed to telemetry. | Focused weekly core/provider tests and full `swift test` |
+| `@ai-sdk/deepinfra` | `3.0.57 -> 3.0.62` | `ported` — Published file/mask image-input capability tables; unknown model IDs remain nil. Existing language/video/request/parser behavior is unchanged. | Focused weekly core/provider tests and full `swift test` |
+| `@ai-sdk/deepseek` | `3.0.54 -> 3.0.58` | `ported` — Standard prompt_tokens_details.cached_tokens fallback after provider-specific cache-hit counts; no-cache accounting preserved. | Focused weekly core/provider tests and full `swift test` |
+| `@ai-sdk/elevenlabs` | `3.0.50 -> 3.0.54` | `identity-only` — Published implementation changes only the provider user-agent prefix to ai-sdk-elevenlabs/<version>; request builders, options, parsers, streaming and errors are unchanged. Exact header assertions and owned versions are synchronized. | Updated existing header assertions where applicable; full `swift test` |
+| `@ai-sdk/fal` | `3.0.50 -> 3.0.54` | `ported` — Published file/mask image-input capability tables; unknown model IDs remain nil. Existing language/video/request/parser behavior is unchanged. | Focused weekly core/provider tests and full `swift test` |
+| `@ai-sdk/fish-audio` | `3.0.27 -> 3.0.31` | `identity-only` — Published implementation changes only the provider user-agent prefix to ai-sdk-fish-audio/<version>; request builders, options, parsers, streaming and errors are unchanged. Exact header assertions and owned versions are synchronized. | Updated existing header assertions where applicable; full `swift test` |
+| `@ai-sdk/fireworks` | `3.0.60 -> 3.0.65` | `ported` — Published file/mask image-input capability tables; unknown model IDs remain nil. Existing language/video/request/parser behavior is unchanged. | Focused weekly core/provider tests and full `swift test` |
+| `@ai-sdk/gateway` | `4.0.95 -> 4.0.103` | `ported` — Credits teamId/slug query routing; conditional evaluation confidence/probability can target all questions; nonempty conditional model IDs have no artificial length cap; speech/transcription/stream finish usage preserved. New typed model-ID declarations need no Swift restriction. | Focused weekly core/provider tests and full `swift test` |
+| `@ai-sdk/gmicloud` | `3.0.28 -> 3.0.33` | `identity-only` — Published implementation changes only the provider user-agent prefix to ai-sdk-gmicloud/<version>; request builders, options, parsers, streaming and errors are unchanged. Exact header assertions and owned versions are synchronized. | Updated existing header assertions where applicable; full `swift test` |
+| `@ai-sdk/gladia` | `3.0.49 -> 3.0.53` | `identity-only` — Published implementation changes only the provider user-agent prefix to ai-sdk-gladia/<version>; request builders, options, parsers, streaming and errors are unchanged. Exact header assertions and owned versions are synchronized. | Updated existing header assertions where applicable; full `swift test` |
+| `@ai-sdk/google` | `4.0.82 -> 4.0.87` | `ported` — Gemini image capability discovery and native speech usageMetadata. Gemini transcription usage/streaming and Realtime event changes remain deferred with the previously absent native adapters. | Focused weekly core/provider tests and full `swift test` |
+| `@ai-sdk/google-vertex` | `5.0.95 -> 5.0.101` | `ported` — Generated-host location validation and Chirp region validation even with a custom Speech endpoint; Gemini image capabilities and speech usage. Vertex Gemini transcription streaming/usage and browser edge credential behavior remain deferred or platform-specific. | Focused weekly core/provider tests and full `swift test` |
+| `@ai-sdk/groq` | `4.0.50 -> 4.0.54` | `identity-only` — Published implementation changes only the provider user-agent prefix to ai-sdk-groq/<version>; request builders, options, parsers, streaming and errors are unchanged. Exact header assertions and owned versions are synchronized. | Updated existing header assertions where applicable; full `swift test` |
+| `@ai-sdk/huggingface` | `2.0.57 -> 2.0.62` | `version-only` — Published src (excluding version.ts) is byte-identical; synchronize owned version literals and ledger. Existing user-agent prefix is retained. | Updated existing header assertions where applicable; full `swift test` |
+| `@ai-sdk/hume` | `3.0.49 -> 3.0.53` | `identity-only` — Published implementation changes only the provider user-agent prefix to ai-sdk-hume/<version>; request builders, options, parsers, streaming and errors are unchanged. Exact header assertions and owned versions are synchronized. | Updated existing header assertions where applicable; full `swift test` |
+| `@ai-sdk/klingai` | `4.0.51 -> 4.0.55` | `identity-only` — Published implementation changes only the provider user-agent prefix to ai-sdk-klingai/<version>; request builders, options, parsers, streaming and errors are unchanged. Exact header assertions and owned versions are synchronized. | Updated existing header assertions where applicable; full `swift test` |
+| `@ai-sdk/lmnt` | `3.0.36 -> 3.0.36` | `current` — No published version drift; existing coverage retained. | Updated existing header assertions where applicable; full `swift test` |
+| `@ai-sdk/luma` | `3.0.50 -> 3.0.54` | `ported` — Published file/mask image-input capability tables; unknown model IDs remain nil. Existing language/video/request/parser behavior is unchanged. | Focused weekly core/provider tests and full `swift test` |
+| `@ai-sdk/mcp` | `2.0.60 -> 2.0.66` | `ported` — Typed authorization-server mismatch errors; invalidation context captures the failed refresh generation so shared stores can compare-and-delete without deleting a concurrent refresh. Swift dictionaries already isolate reserved tool names. | Focused weekly core/provider tests and full `swift test` |
+| `@ai-sdk/minimax` | `3.0.42 -> 3.0.48` | `identity-only` — Published implementation changes only the provider user-agent prefix to ai-sdk-minimax/<version>; request builders, options, parsers, streaming and errors are unchanged. Exact header assertions and owned versions are synchronized. | Updated existing header assertions where applicable; full `swift test` |
+| `@ai-sdk/mistral` | `4.0.52 -> 4.0.56` | `ported` — Error finish reasons; schema-bearing JSON instructions when structuredOutputs is false; native transcription usage. | Focused weekly core/provider tests and full `swift test` |
+| `@ai-sdk/moonshotai` | `3.0.58 -> 3.0.62` | `identity-only` — Published implementation changes only the provider user-agent prefix to ai-sdk-moonshotai/<version>; request builders, options, parsers, streaming and errors are unchanged. Exact header assertions and owned versions are synchronized. | Updated existing header assertions where applicable; full `swift test` |
+| `@ai-sdk/open-responses` | `2.0.54 -> 2.0.58` | `deferred` — User-agent identity synchronized. Bare extension item/event codecs and reserved-type registration were audited but remain deferred with the existing extension registry gap; ordinary Responses request/parser behavior is preserved. | Updated existing header assertions where applicable; full `swift test` |
+| `@ai-sdk/openai` | `4.0.78 -> 4.0.83` | `ported` — Recursive singleton local-reference allOf normalization, root definition expansion with annotations, image capabilities, native transcription usage; gpt-6.1-sol remains accepted through open string IDs. | Focused weekly core/provider tests and full `swift test` |
+| `@ai-sdk/openai-compatible` | `3.0.57 -> 3.0.62` | `ported` — Explicit supportsMultiPartToolContent opt-in for text/image/audio/file/video tool outputs, retaining the default string behavior; generic image capabilities remain unknown. | Focused weekly core/provider tests and full `swift test` |
+| `@ai-sdk/perplexity` | `5.0.1 -> 5.0.5` | `ported` — Default X-Pplx-Integration header with case-insensitive explicit override preservation. | Focused weekly core/provider tests and full `swift test` |
+| `@ai-sdk/prodia` | `2.0.50 -> 2.0.54` | `ported` — Published file/mask image-input capability tables; unknown model IDs remain nil. Existing language/video/request/parser behavior is unchanged. | Focused weekly core/provider tests and full `swift test` |
+| `@ai-sdk/quiverai` | `2.0.50 -> 2.0.54` | `ported` — Published file/mask image-input capability tables; unknown model IDs remain nil. Existing language/video/request/parser behavior is unchanged. | Focused weekly core/provider tests and full `swift test` |
+| `@ai-sdk/replicate` | `3.0.50 -> 3.0.54` | `ported` — Published file/mask image-input capability tables; unknown model IDs remain nil. Existing language/video/request/parser behavior is unchanged. | Focused weekly core/provider tests and full `swift test` |
+| `@ai-sdk/revai` | `3.0.49 -> 3.0.53` | `identity-only` — Published implementation changes only the provider user-agent prefix to ai-sdk-revai/<version>; request builders, options, parsers, streaming and errors are unchanged. Exact header assertions and owned versions are synchronized. | Updated existing header assertions where applicable; full `swift test` |
+| `@ai-sdk/togetherai` | `3.0.58 -> 3.0.63` | `ported` — Published file/mask image-input capability tables; unknown model IDs remain nil. Existing language/video/request/parser behavior is unchanged. | Focused weekly core/provider tests and full `swift test` |
+| `@ai-sdk/typesafe-ai` | `3.0.8 -> 3.0.12` | `identity-only` — Published implementation changes only the provider user-agent prefix to ai-sdk-typesafe-ai/<version>; request builders, options, parsers, streaming and errors are unchanged. Exact header assertions and owned versions are synchronized. | Updated existing header assertions where applicable; full `swift test` |
+| `@ai-sdk/vercel` | `3.0.30 -> 3.0.30` | `current` — No published version drift; existing coverage retained. | Updated existing header assertions where applicable; full `swift test` |
+| `@ai-sdk/voyage` | `2.0.49 -> 2.0.53` | `identity-only` — Published implementation changes only the provider user-agent prefix to ai-sdk-voyage/<version>; request builders, options, parsers, streaming and errors are unchanged. Exact header assertions and owned versions are synchronized. | Updated existing header assertions where applicable; full `swift test` |
+| `@ai-sdk/xai` | `5.0.10 -> 5.0.14` | `ported` — Published file/mask image-input capability tables; unknown model IDs remain nil. Existing language/video/request/parser behavior is unchanged. | Focused weekly core/provider tests and full `swift test` |
+| `@ai-sdk/zai` | `3.0.19 -> 3.0.24` | `identity-only` — Published implementation changes only the provider user-agent prefix to ai-sdk-zai/<version>; request builders, options, parsers, streaming and errors are unchanged. Exact header assertions and owned versions are synchronized. | Updated existing header assertions where applicable; full `swift test` |
+| `ai` | `7.0.117 -> 7.0.127` | `ported` — Async image capability middleware; custom tool-search ranking and result limits; metadata-safe smoothing; audio usage and consumed-byte streaming telemetry; data-part conversion in agent UI streams; native partial-input resume and superseded approval filtering. Swift dictionaries and value equality already cover prototype/cross-realm fixes. Browser HTTP reconnect, raw-input UI wire-state migration, Node SSE keep-alive/response headers, diagnostics-channel instrumentation, and workflow serializers remain outside the native surface. | Focused weekly core/provider tests and full `swift test` |
+| `@ai-sdk/provider` | `4.0.18 -> 4.0.21` | `ported` — Async tri-state file/mask image capabilities and optional native JSON speech/transcription/stream-finish usage are exposed with defaults and retained initializer overloads. | Focused weekly core/provider tests and full `swift test` |
+| `@ai-sdk/provider-utils` | `5.0.49 -> 5.0.53` | `ported` — Complete ASCII DNS-label validation, ambiguity-safe ID/index/name tool-call correlation, unique IDs for missing/reused IDs, structural argument tracking, stable mixed-index flush order, and transcription finish usage. Swift URLSession/header/environment types cover the JavaScript-only helper changes. | Focused weekly core/provider tests and full `swift test` |
+| `@ai-sdk/react` | `4.0.120 -> 4.0.130` | `out-of-scope` — WeakMap useChat registrations and synchronous snapshot useState are React lifecycle changes outside this framework-neutral Swift package. Portable native resume/data/approval behavior is covered under ai. | Published source and upstream hook tests reviewed; no native React test target |
+
+### Published source evidence
+
+Each old/latest tarball was downloaded from its exact registry `dist.tarball` and verified against `dist.integrity` (SHA-512). Published `src` excluding `version.ts`, generated declarations, request builders, response parsers, provider options, headers/authentication, error handling, streams and metadata were compared independently. Package dependencies and expanded string IDs were inspected too. Source changes below identify the reviewed surfaces; TypeScript declarations are reviewed, rather than treated as Swift API requirements.
+
+| Package | Changed published source |
+| --- | --- |
+| `@ai-sdk/alibaba` | `alibaba-provider.ts` |
+| `@ai-sdk/amazon-bedrock` | `amazon-bedrock-api-types.ts`, `amazon-bedrock-chat-language-model-options.ts`, `amazon-bedrock-chat-language-model.ts`, `amazon-bedrock-image-model.ts`, `amazon-bedrock-provider.ts`, `amazon-bedrock-sigv4-fetch.ts`, `anthropic/amazon-bedrock-anthropic-options.ts`, `anthropic/amazon-bedrock-anthropic-provider.ts`, `inject-fetch-headers.ts`, `mantle/bedrock-mantle-provider.ts`, `resolve-amazon-bedrock-base-url.ts` |
+| `@ai-sdk/anthropic` | `anthropic-api.ts`, `anthropic-batch.ts`, `anthropic-language-model-options.ts`, `anthropic-language-model.ts`, `anthropic-provider.ts`, `convert-to-anthropic-prompt.ts` |
+| `@ai-sdk/anthropic-aws` | `anthropic-aws-fetch.ts`, `anthropic-aws-provider.ts` |
+| `@ai-sdk/assemblyai` | `assemblyai-provider.ts` |
+| `@ai-sdk/azure` | `azure-openai-provider.ts`, `index.ts`, `azure-mai-transcription-model-options.ts`, `azure-mai-transcription-model.ts`, `azure-speech-model-options.ts`, `azure-speech-speech-model-options.ts`, `azure-speech-speech-model.ts`, `azure-speech-transcription-model-options.ts`, `azure-speech-transcription-model.ts`, `azure-transcription-model-options.ts`, `azure-transcription-provider-metadata.ts` |
+| `@ai-sdk/baseten` | `baseten-provider.ts` |
+| `@ai-sdk/black-forest-labs` | `black-forest-labs-image-model.ts`, `black-forest-labs-provider.ts` |
+| `@ai-sdk/bytedance` | None apart from version.ts |
+| `@ai-sdk/cartesia` | `cartesia-provider.ts` |
+| `@ai-sdk/cerebras` | `cerebras-provider.ts` |
+| `@ai-sdk/cohere` | `cohere-provider.ts` |
+| `@ai-sdk/deepgram` | `deepgram-provider.ts`, `deepgram-speech-model.ts`, `deepgram-transcription-model.ts` |
+| `@ai-sdk/deepinfra` | `deepinfra-image-model.ts`, `deepinfra-provider.ts` |
+| `@ai-sdk/deepseek` | `chat/convert-to-deepseek-usage.ts`, `deepseek-provider.ts` |
+| `@ai-sdk/elevenlabs` | `elevenlabs-provider.ts` |
+| `@ai-sdk/fal` | `fal-image-model.ts`, `fal-provider.ts` |
+| `@ai-sdk/fish-audio` | `fish-audio-provider.ts` |
+| `@ai-sdk/fireworks` | `fireworks-image-model.ts`, `fireworks-provider.ts` |
+| `@ai-sdk/gateway` | `gateway-evaluation-model-settings.ts`, `gateway-fetch-metadata.ts`, `gateway-language-model-settings.ts`, `gateway-provider-options.ts`, `gateway-provider.ts`, `gateway-reranking-model-settings.ts`, `gateway-speech-model-settings.ts`, `gateway-speech-model.ts`, `gateway-transcription-model-settings.ts`, `gateway-transcription-model.ts`, `index.ts`, `zod.ts` |
+| `@ai-sdk/gmicloud` | `gmicloud-provider.ts` |
+| `@ai-sdk/gladia` | `gladia-provider.ts` |
+| `@ai-sdk/google` | `google-image-model.ts`, `google-provider.ts`, `google-speech-api.ts`, `google-speech-model.ts`, `realtime/google-realtime-event-mapper.ts`, `transcription/google-transcription-model.ts` |
+| `@ai-sdk/google-vertex` | `anthropic/google-vertex-anthropic-options.ts`, `anthropic/google-vertex-anthropic-provider.ts`, `edge/google-vertex-auth-edge.ts`, `gemini-transcription/google-vertex-gemini-transcription-model.ts`, `google-vertex-image-model.ts`, `google-vertex-provider-base.ts`, `google-vertex-transcription-model-options.ts`, `google-vertex-transcription-model.ts`, `maas/google-vertex-maas-provider.ts` |
+| `@ai-sdk/groq` | `groq-provider.ts` |
+| `@ai-sdk/huggingface` | None apart from version.ts |
+| `@ai-sdk/hume` | `hume-provider.ts` |
+| `@ai-sdk/klingai` | `klingai-provider.ts` |
+| `@ai-sdk/luma` | `luma-image-model.ts`, `luma-provider.ts` |
+| `@ai-sdk/mcp` | `error/oauth-error.ts`, `index.ts`, `tool/mcp-client.ts`, `tool/oauth.ts` |
+| `@ai-sdk/minimax` | `minimax-provider.ts` |
+| `@ai-sdk/mistral` | `map-mistral-finish-reason.ts`, `mistral-chat-language-model.ts`, `mistral-provider.ts`, `mistral-transcription-model.ts` |
+| `@ai-sdk/moonshotai` | `moonshotai-provider.ts` |
+| `@ai-sdk/open-responses` | `index.ts`, `open-responses-extension.ts`, `open-responses-provider.ts`, `responses/convert-to-open-responses-input.ts`, `responses/open-responses-language-model.ts` |
+| `@ai-sdk/openai` | `chat/openai-chat-language-model-options.ts`, `image/openai-image-model.ts`, `normalize-openai-json-schema.ts`, `openai-provider.ts`, `responses/openai-responses-language-model-options.ts`, `transcription/openai-transcription-api.ts`, `transcription/openai-transcription-model.ts` |
+| `@ai-sdk/openai-compatible` | `chat/convert-to-openai-compatible-chat-messages.ts`, `chat/openai-compatible-api-types.ts`, `chat/openai-compatible-chat-language-model.ts`, `image/openai-compatible-image-model.ts`, `openai-compatible-provider.ts` |
+| `@ai-sdk/perplexity` | `perplexity-provider.ts` |
+| `@ai-sdk/prodia` | `prodia-image-model.ts`, `prodia-provider.ts` |
+| `@ai-sdk/quiverai` | `quiverai-image-model.ts`, `quiverai-provider.ts` |
+| `@ai-sdk/replicate` | `replicate-image-model.ts`, `replicate-provider.ts` |
+| `@ai-sdk/revai` | `revai-provider.ts` |
+| `@ai-sdk/togetherai` | `togetherai-image-model.ts`, `togetherai-provider.ts` |
+| `@ai-sdk/typesafe-ai` | `typesafe-ai-evaluation-model.ts`, `typesafe-ai-provider.ts` |
+| `@ai-sdk/voyage` | `voyage-provider.ts` |
+| `@ai-sdk/xai` | `xai-image-model.ts`, `xai-provider.ts` |
+| `@ai-sdk/zai` | `zai-provider.ts` |
+| `ai` | `agent/create-agent-ui-stream-response.ts`, `agent/create-agent-ui-stream.ts`, `agent/pipe-agent-ui-stream-to-response.ts`, `embed/embed-many.ts`, `generate-image/generate-image.ts`, `generate-speech/generate-speech.ts`, `generate-speech/index.ts`, `generate-text/prune-messages.ts`, `generate-text/smooth-stream.ts`, `generate-text/stream-text-result.ts`, `generate-text/validate-tool-approvals.ts`, `generate-video/generate-video.ts`, `middleware/extract-reasoning-middleware.ts`, `middleware/wrap-image-model.ts`, `registry/provider-registry.ts`, `telemetry/create-telemetry-dispatcher.ts`, `telemetry/telemetry.ts`, `telemetry/tracing-channel-publisher.ts`, `telemetry/tracing-channel.ts`, `test/mock-image-model-v4.ts`, `tool-search/prepare-tool-search.ts`, `tool-search/tool-search.ts`, `transcribe/index.ts`, `transcribe/stream-transcribe.ts`, `transcribe/transcribe.ts`, `ui/chat.ts`, `ui/convert-to-model-messages.ts`, `ui/http-chat-transport.ts`, `ui/last-assistant-message-is-complete-with-tool-calls.ts`, `ui/process-ui-message-stream.ts`, `ui/ui-messages.ts`, `ui/validate-ui-messages.ts`, `ui-message-stream/create-ui-message-stream-response.ts`, `ui-message-stream/create-ui-message-stream.ts`, `ui-message-stream/pipe-ui-message-stream-to-response.ts`, `ui-message-stream/to-ui-message-chunk.ts`, `ui-message-stream/to-ui-message-stream.ts`, `ui-message-stream/ui-message-stream-response-init.ts`, `util/write-to-server-response.ts`, `generate-speech/speech-events.ts`, `transcribe/transcription-events.ts`, `ui-message-stream/create-sse-stream-with-keep-alive.ts`, `util/set-own.ts` |
+| `@ai-sdk/provider` | `image-model/v4/image-model-v4.ts`, `image-model-middleware/v4/image-model-v4-middleware.ts`, `speech-model/v4/speech-model-v4-result.ts`, `transcription-model/v4/transcription-model-v4-result.ts`, `transcription-model/v4/transcription-model-v4-stream-part.ts` |
+| `@ai-sdk/provider-utils` | `delete-from-api.ts`, `get-from-api.ts`, `get-runtime-environment-user-agent.ts`, `index.ts`, `post-multipart-stream-to-api.ts`, `post-to-api.ts`, `streaming-tool-call-tracker.ts`, `transcription-stream-envelope.ts`, `is-valid-hostname-part.ts`, `streaming-tool-call-argument-state.ts` |
+| `@ai-sdk/react` | `use-chat.ts` |
+
+### Registry discovery and deferred scope
+
+Fresh npm search returned 72 scoped names; exact registry-prefix enumeration returned 88 (`_all_docs` with `startkey="@ai-sdk/"`, exclusive upper bound `endkey="@ai-sdk0"`). The SHA-256 of sorted names plus a final newline is `9dc17bdfde0352e0ada746e394994d1da533e2290b7c6ed4c9ed81d171860b27`. All 37 untracked names had exact registry metadata and tarballs inspected.
+
+The newly published provider **`@ai-sdk/topaz@3.0.0`** contains image and video enhancement models (TOPAZ_API_KEY / X-API-Key authentication, api.topazlabs.com). It is not auto-ported. Recommended next vertical: enhancement input/options and request builders, image/video results, asynchronous job/error/cancellation behavior, focused fixtures, factories/capability docs and version ledger. Provider detection now recognizes Topaz even though its registry description is empty. `@ai-sdk/spacexai@0.0.0` remains an empty reservation; framework, harness, sandbox, schema, workflow and telemetry packages are not model-provider discoveries.
+
+Deferred native/shared boundaries remain resolver-address pinning, Bedrock omitted-versus-empty stopSequences, Google/Vertex Gemini transcription and remaining realtime/WebRTC/translation adapters, explicit UI-step identity and browser rawInput/state/reconnect wire migration, and Open Responses extension codec registry/workflow serialization. Native partial-argument/text replay, data conversion and superseded approvals are implemented without claiming the browser wire surface.
+
+### Verification
+
+Final checks on the release source tree passed:
+
+- `swift test --filter 'Weekly20261004|gatewayStreamingTranscription|anthropic.*Fallback|anthropicBatchV4'`: 54 tests passed. The earlier repair cluster passed 107 tests, including tool-call correlation, smoothing, identity and timeout expectations.
+- `swift test`: 3,008 tests in 22 suites passed.
+- `swift test --no-parallel`: 3,008 tests in 22 suites passed, matching the CI execution mode.
+- `swift build --package-path Examples`: all documentation examples built.
+- `npm ci --prefix docs-site`: 446 packages installed.
+- `npm --prefix docs-site run check`: 0 errors, 0 warnings, 0 hints.
+- `npm --prefix docs-site run build`: 93 pages built.
+- `node Scripts/check-upstream-versions.js --all --json`: 52 current, 0 outdated, 0 registry errors. Fresh exact-prefix readback retained all 88 scoped names and the digest above.
+- `git diff --check`: clean.
+
+Credentialed live-provider tests were not enabled. The release adds public APIs without changing existing call, initializer or iterator signatures. SwiftPM versioning is carried by the annotated git tag; private docs-site and default MCP client versions are unchanged.
 
 ## 2026-09-27 Weekly Audit
 

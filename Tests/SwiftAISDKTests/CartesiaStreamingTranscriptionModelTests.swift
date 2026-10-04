@@ -82,7 +82,7 @@ import Testing
     #expect(requestHeader(tokenRequest, "cartesia-version") == "2026-03-01")
     #expect(requestHeader(tokenRequest, "custom-provider-header") == "provider-value")
     #expect(requestHeader(tokenRequest, "custom-request-header") == "request-value")
-    #expect(requestHeader(tokenRequest, "user-agent")?.contains("ai-sdk/cartesia/3.0.44") == true)
+    #expect(requestHeader(tokenRequest, "user-agent")?.contains("ai-sdk-cartesia/3.0.48") == true)
     #expect(try tokenRequestBody(tokenRequest) == .object([
         "grants": .object(["stt": .bool(true)])
     ]))

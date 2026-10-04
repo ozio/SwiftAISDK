@@ -609,10 +609,14 @@ actor AIToolDiscoveryState {
         var activeTools = tools.filter { !$0.deferLoading || discovered.contains($0.name) }
         for index in activeTools.indices where activeTools[index].toolSearchMarker {
             let searchName = activeTools[index].name
+            let searchFunction = activeTools[index].toolSearchFunction
+            let maxResults = activeTools[index].toolSearchMaxResults
             let search: @Sendable (JSONValue) async throws -> JSONValue = { [self] input in
                 try await self.search(
                     input: input,
                     searchName: searchName,
+                    customSearch: searchFunction,
+                    maxResults: maxResults,
                     tools: tools,
                     routing: routing
                 )
@@ -681,9 +685,11 @@ actor AIToolDiscoveryState {
     private func search(
         input: JSONValue,
         searchName: String,
+        customSearch: AIToolSearchFunction?,
+        maxResults: Int,
         tools: [AITool],
         routing: AIToolCallerRouting
-    ) throws -> JSONValue {
+    ) async throws -> JSONValue {
         guard let query = input["query"]?.stringValue else {
             throw AIInvalidToolInputError(
                 toolName: searchName,
@@ -692,40 +698,33 @@ actor AIToolDiscoveryState {
         }
 
         let searchCallers = callers(for: searchName, routing: routing)
-        let terms = Set(toolSearchTokens(query))
-        guard !terms.isEmpty else {
-            return ["tools": []]
+        let candidates = tools.filter { candidate in
+            candidate.deferLoading && !candidate.toolSearchMarker &&
+                !Set(callers(for: candidate.name, routing: routing)).isDisjoint(with: searchCallers)
         }
-        let matches = tools.enumerated().compactMap { index, candidate -> (tool: AITool, score: Int, index: Int)? in
-            guard candidate.deferLoading,
-                  !candidate.toolSearchMarker,
-                  !Set(callers(for: candidate.name, routing: routing)).isDisjoint(with: searchCallers) else {
-                return nil
-            }
-            let nameTerms = Set(toolSearchTokens(candidate.name))
-            let descriptionTerms = Set(toolSearchTokens(candidate.description ?? ""))
-            let score = terms.reduce(0) { partial, term in
-                partial + (nameTerms.contains(term) ? 2 : 0) + (descriptionTerms.contains(term) ? 1 : 0)
-            }
-            return score > 0 ? (candidate, score, index) : nil
+        let available = candidates.map { AIToolSearchCandidate(name: $0.name, description: $0.description) }
+        let rankedNames: [String]
+        if let customSearch {
+            rankedNames = try await customSearch(query, available)
+        } else {
+            let terms = Set(toolSearchTokens(query))
+            rankedNames = candidates.enumerated().compactMap { index, candidate -> (name: String, score: Int, index: Int)? in
+                let nameTerms = Set(toolSearchTokens(candidate.name))
+                let descriptionTerms = Set(toolSearchTokens(candidate.description ?? ""))
+                let score = terms.reduce(0) { $0 + (nameTerms.contains($1) ? 2 : 0) + (descriptionTerms.contains($1) ? 1 : 0) }
+                return score > 0 ? (candidate.name, score, index) : nil
+            }.sorted { $0.score == $1.score ? $0.index < $1.index : $0.score > $1.score }.map(\.name)
         }
-        .sorted { lhs, rhs in
-            lhs.score == rhs.score ? lhs.index < rhs.index : lhs.score > rhs.score
-        }
-        .prefix(5)
-
-        for match in matches {
-            discovered.insert(match.tool.name)
-        }
-
-        return .object([
-            "tools": .array(matches.map { match in
-                .object([
-                    "name": .string(match.tool.name),
-                    "description": match.tool.description.map(JSONValue.string)
-                ].compactMapValues { $0 })
-            })
-        ])
+        let registry = Dictionary(uniqueKeysWithValues: available.map { ($0.name, $0) })
+        var seen: Set<String> = []
+        let matches = rankedNames.compactMap { name -> AIToolSearchCandidate? in
+            guard seen.insert(name).inserted else { return nil }
+            return registry[name]
+        }.prefix(maxResults)
+        for match in matches { discovered.insert(match.name) }
+        return .object(["tools": .array(matches.map { match in
+            .object(["name": .string(match.name), "description": match.description.map(JSONValue.string)].compactMapValues { $0 })
+        })])
     }
 
     private func validateRouting(

@@ -41,6 +41,19 @@ let result = try await model.generateImage(
 
 ## Options
 
+Image models expose asynchronous tri-state input capabilities. `nil` means the
+provider does not know whether this model accepts the input, so it should not
+be treated as a negative capability:
+
+```swift
+let filesSupported: Bool? = await model.supportsFileInputs
+let masksSupported: Bool? = await model.supportsMaskInputs
+```
+
+Provider model tables supply known values. Azure and generic compatible image
+servers report unknown values. `AIImageModelMiddleware` can override either
+flag asynchronously, including overriding a known value to `nil`.
+
 - `size` and `aspectRatio` describe the output shape.
 - `seed` requests deterministic output when a provider supports it.
 - `count` requests multiple images.

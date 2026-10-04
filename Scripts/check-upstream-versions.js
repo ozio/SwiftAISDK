@@ -338,7 +338,8 @@ function classifyDiscoveredPackage(pkg) {
   const schemaPackages = new Set(["valibot"]);
   const corePackages = new Set(["provider", "provider-utils"]);
   const adapterPackages = new Set(["langchain", "llamaindex", "workflow"]);
-  const providerPackages = new Set(["typesafe-ai"]);
+  // Topaz publishes no description; its image/video implementation is a provider.
+  const providerPackages = new Set(["typesafe-ai", "topaz"]);
 
   if (corePackages.has(shortName)) return "core";
   if (adapterPackages.has(shortName) || description.includes("adapter")) return "adapter";

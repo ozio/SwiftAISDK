@@ -110,7 +110,8 @@ func deepSeekUsage(from raw: JSONValue) -> TokenUsage? {
     guard let usage = raw["usage"] else { return TokenUsage() }
     let inputTokens = usage["prompt_tokens"]?.intValue ?? usage["input_tokens"]?.intValue ?? 0
     let outputTokens = usage["completion_tokens"]?.intValue ?? usage["output_tokens"]?.intValue ?? 0
-    let cacheReadTokens = usage["prompt_cache_hit_tokens"]?.intValue ?? 0
+    let cacheReadTokens = usage["prompt_cache_hit_tokens"]?.intValue
+        ?? usage["prompt_tokens_details"]?["cached_tokens"]?.intValue ?? 0
     let reasoningTokens = usage["completion_tokens_details"]?["reasoning_tokens"]?.intValue ?? 0
     let totalTokens = usage["total_tokens"]?.intValue ?? inputTokens + outputTokens
     return TokenUsage(

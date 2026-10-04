@@ -137,7 +137,16 @@ public extension EmbeddingModel {
 public protocol ImageModel: Sendable {
     var providerID: String { get }
     var modelID: String { get }
+    /// Whether the model accepts reference images; nil means unknown.
+    var supportsFileInputs: Bool? { get async }
+    /// Whether the model accepts an editing mask; nil means unknown.
+    var supportsMaskInputs: Bool? { get async }
     func generateImage(_ request: ImageGenerationRequest) async throws -> ImageGenerationResult
+}
+
+public extension ImageModel {
+    var supportsFileInputs: Bool? { nil }
+    var supportsMaskInputs: Bool? { nil }
 }
 
 public protocol TranscriptionModel: Sendable {

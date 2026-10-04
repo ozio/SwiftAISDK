@@ -1,557 +1,254 @@
 # Fresh Upstream Test Diff Audit
 
-This file tracks changed upstream test files between the checked SwiftAISDK
-test inventory baseline and the current weekly-check upstream checkout. It is a
-working audit, not a generated inventory.
+Snapshot date: 2026-10-04
 
-Snapshot:
+Baseline: `vercel/ai@18b2b32deeea8982bd252996b0616fd1d9730b83`.
+Current: `vercel/ai@15f1a4d0531ac641a4a4d9cc602c0536c1906834`.
+The inventory has 976 executable test/spec files in 82 groups, up from 948.
+This diff contains 210 executable paths and nine declaration-test paths.
+Published old/latest npm tarballs, not unpublished monorepo work, determine the
+behavior baseline. Each candidate test path below is accounted for separately;
+declaration tests check TypeScript types and are not counted as executed Swift tests.
 
-- Date: `2026-09-27`
-- Baseline upstream ref: `vercel/ai@20dd00abba618d5a516e0fee40ccd3e18a2bd1fb`
-- Current upstream ref: `vercel/ai@18b2b32deeea8982bd252996b0616fd1d9730b83`
-- Diff command:
+Diff command:
 
-  ```sh
-  git -C <vercel-ai-checkout> diff --name-status \
-    20dd00abba618d5a516e0fee40ccd3e18a2bd1fb..18b2b32deeea8982bd252996b0616fd1d9730b83 \
-    -- 'packages/**/*.test.ts' 'packages/**/*.test.tsx' \
-       'packages/**/*.test.mts' 'packages/**/*.spec.ts' \
-       'packages/**/*.spec.tsx' 'packages/**/*.spec.mts' \
-       'examples/**/*.test.ts' 'examples/**/*.test.tsx' \
-       'examples/**/*.test.mts' 'examples/**/*.spec.ts' \
-       'examples/**/*.spec.tsx' 'examples/**/*.spec.mts'
-  ```
+```sh
+git diff --name-status 18b2b32deeea8982bd252996b0616fd1d9730b83..15f1a4d0531ac641a4a4d9cc602c0536c1906834 -- packages examples
+```
 
-Status meanings:
+Keep executable names ending in `.test.ts`, `.test.tsx`, `.test.mts`,
+`.spec.ts`, `.spec.tsx`, `.spec.mts`; separately retain paths containing `test-d`.
+`UpstreamPackageDiffAudit.md` contains each package's exact version and source
+disposition. Native translations are in the four `Weekly*20261004Tests.swift`
+files, shared tracker tests and existing affected provider/core suites.
 
-- `ported`: new upstream behavior is covered by Swift tests/runtime.
-- `covered`: existing Swift coverage already proves the changed behavior.
-- `deferred`: portable behavior was audited, but needs a broader public/runtime
-  design than this weekly batch.
-- `no-swift-action`: upstream diff does not add portable Swift behavior.
-- `out-of-scope`: package/product surface is intentionally not exposed by
-  SwiftAISDK per `Docs/AgentPortingGuide.md`.
+Dispositions: 68 out-of-scope, 102 ported, 11 covered, 7 partial, 6 deferred, 22 identity-only, 3 announced.
 
-## 2026-09-27 Diff
+## Executable paths
 
-The generated executable inventory grows from 919 to 948 files while remaining
-at 81 groups. The exact comparison contains 169 executable changes (33 added,
-132 modified, four deleted) and 27 declaration-test changes (11 added,
-16 modified), for 196 unique classified paths. The executable name-status
-SHA-256 is `e907a43d2cba0d55062c8ce22b320f205dd1d056f71fbd8b6a3430a279f3d127`;
-the declaration name-status SHA-256 is
-`b67dba79253c2cd102a86576b67bf4fa4fda9caeaee40ba940fe1d5487656c05`.
+| Change | Upstream path | Decision | Swift evidence / boundary |
+| --- | --- | --- | --- |
+| `A` | `examples/ai-functions/src/lib/create-model-id-alias-fetch.test.ts` | `out-of-scope` | Framework/harness/workflow/tooling or React surface absent from this Swift provider package. |
+| `M` | `packages/ai/src/agent/create-agent-ui-stream.test.ts` | `ported` | WeeklyImageAndCore/WeeklyCoreAudioMCP regressions cover the native image, tool-search, audio, metadata or agent conversion behavior; declaration tests are reviewed separately. |
+| `M` | `packages/ai/src/embed/embed-many.test.ts` | `covered` | Native value/dictionary/file/iterator semantics already cover the published correction; focused existing regressions and full suite retained. |
+| `M` | `packages/ai/src/generate-image/generate-image.test.ts` | `ported` | WeeklyImageAndCore/WeeklyCoreAudioMCP regressions cover the native image, tool-search, audio, metadata or agent conversion behavior; declaration tests are reviewed separately. |
+| `M` | `packages/ai/src/generate-speech/generate-speech.test.ts` | `ported` | WeeklyImageAndCore/WeeklyCoreAudioMCP regressions cover the native image, tool-search, audio, metadata or agent conversion behavior; declaration tests are reviewed separately. |
+| `A` | `packages/ai/src/generate-speech/generated-audio-file.test.ts` | `covered` | Native value/dictionary/file/iterator semantics already cover the published correction; focused existing regressions and full suite retained. |
+| `M` | `packages/ai/src/generate-text/prune-messages.test.ts` | `covered` | Native value/dictionary/file/iterator semantics already cover the published correction; focused existing regressions and full suite retained. |
+| `M` | `packages/ai/src/generate-text/smooth-stream.test.ts` | `ported` | WeeklyImageAndCore/WeeklyCoreAudioMCP regressions cover the native image, tool-search, audio, metadata or agent conversion behavior; declaration tests are reviewed separately. |
+| `A` | `packages/ai/src/generate-text/validate-tool-approvals.node.test.ts` | `covered` | Native value/dictionary/file/iterator semantics already cover the published correction; focused existing regressions and full suite retained. |
+| `M` | `packages/ai/src/generate-video/generate-video.test.ts` | `covered` | Native value/dictionary/file/iterator semantics already cover the published correction; focused existing regressions and full suite retained. |
+| `M` | `packages/ai/src/middleware/extract-reasoning-middleware.test.ts` | `covered` | Native value/dictionary/file/iterator semantics already cover the published correction; focused existing regressions and full suite retained. |
+| `M` | `packages/ai/src/middleware/wrap-image-model.test.ts` | `ported` | WeeklyImageAndCore/WeeklyCoreAudioMCP regressions cover the native image, tool-search, audio, metadata or agent conversion behavior; declaration tests are reviewed separately. |
+| `M` | `packages/ai/src/model/as-image-model-v4.test.ts` | `ported` | WeeklyImageAndCore/WeeklyCoreAudioMCP regressions cover the native image, tool-search, audio, metadata or agent conversion behavior; declaration tests are reviewed separately. |
+| `M` | `packages/ai/src/registry/provider-registry.test.ts` | `covered` | Native value/dictionary/file/iterator semantics already cover the published correction; focused existing regressions and full suite retained. |
+| `M` | `packages/ai/src/telemetry/create-telemetry-dispatcher.test.ts` | `ported` | WeeklyImageAndCore/WeeklyCoreAudioMCP regressions cover the native image, tool-search, audio, metadata or agent conversion behavior; declaration tests are reviewed separately. |
+| `M` | `packages/ai/src/telemetry/tracing-channel-publisher.test.ts` | `out-of-scope` | Node HTTP/SSE/diagnostics-channel adapter; Swift returns AsyncSequence rather than a browser HTTP response. |
+| `M` | `packages/ai/src/telemetry/tracing-channel.test.ts` | `out-of-scope` | Node HTTP/SSE/diagnostics-channel adapter; Swift returns AsyncSequence rather than a browser HTTP response. |
+| `M` | `packages/ai/src/tool-search/prepare-tool-search.test.ts` | `ported` | WeeklyImageAndCore/WeeklyCoreAudioMCP regressions cover the native image, tool-search, audio, metadata or agent conversion behavior; declaration tests are reviewed separately. |
+| `M` | `packages/ai/src/tool-search/tool-search.test.ts` | `ported` | WeeklyImageAndCore/WeeklyCoreAudioMCP regressions cover the native image, tool-search, audio, metadata or agent conversion behavior; declaration tests are reviewed separately. |
+| `M` | `packages/ai/src/transcribe/stream-transcribe.test.ts` | `ported` | WeeklyImageAndCore/WeeklyCoreAudioMCP regressions cover the native image, tool-search, audio, metadata or agent conversion behavior; declaration tests are reviewed separately. |
+| `M` | `packages/ai/src/transcribe/transcribe.test.ts` | `ported` | WeeklyImageAndCore/WeeklyCoreAudioMCP regressions cover the native image, tool-search, audio, metadata or agent conversion behavior; declaration tests are reviewed separately. |
+| `A` | `packages/ai/src/ui-message-stream/create-sse-stream-with-keep-alive.test.ts` | `out-of-scope` | Node HTTP/SSE/diagnostics-channel adapter; Swift returns AsyncSequence rather than a browser HTTP response. |
+| `M` | `packages/ai/src/ui-message-stream/create-ui-message-stream-response.test.ts` | `out-of-scope` | Node HTTP/SSE/diagnostics-channel adapter; Swift returns AsyncSequence rather than a browser HTTP response. |
+| `M` | `packages/ai/src/ui-message-stream/create-ui-message-stream.test.ts` | `partial` | Native partial text/tool-input seeding and superseded approvals are tested; browser rawInput wire-state/HTTP resume/explicit step identity remain deferred. |
+| `M` | `packages/ai/src/ui-message-stream/pipe-ui-message-stream-to-response.test.ts` | `out-of-scope` | Node HTTP/SSE/diagnostics-channel adapter; Swift returns AsyncSequence rather than a browser HTTP response. |
+| `M` | `packages/ai/src/ui-message-stream/read-ui-message-stream.test.ts` | `partial` | Native partial text/tool-input seeding and superseded approvals are tested; browser rawInput wire-state/HTTP resume/explicit step identity remain deferred. |
+| `M` | `packages/ai/src/ui/chat.test.ts` | `partial` | Native partial text/tool-input seeding and superseded approvals are tested; browser rawInput wire-state/HTTP resume/explicit step identity remain deferred. |
+| `M` | `packages/ai/src/ui/convert-to-model-messages.test.ts` | `ported` | WeeklyImageAndCore/WeeklyCoreAudioMCP regressions cover the native image, tool-search, audio, metadata or agent conversion behavior; declaration tests are reviewed separately. |
+| `M` | `packages/ai/src/ui/http-chat-transport.test.ts` | `deferred` | No native HTTPChatTransport/resumable HTTP route exists; do not claim browser reconnect parity. |
+| `M` | `packages/ai/src/ui/last-assistant-message-is-complete-with-tool-calls.test.ts` | `partial` | Native partial text/tool-input seeding and superseded approvals are tested; browser rawInput wire-state/HTTP resume/explicit step identity remain deferred. |
+| `M` | `packages/ai/src/ui/process-ui-message-stream.test.ts` | `partial` | Native partial text/tool-input seeding and superseded approvals are tested; browser rawInput wire-state/HTTP resume/explicit step identity remain deferred. |
+| `M` | `packages/ai/src/ui/validate-ui-messages.test.ts` | `partial` | Native partial text/tool-input seeding and superseded approvals are tested; browser rawInput wire-state/HTTP resume/explicit step identity remain deferred. |
+| `A` | `packages/ai/src/util/set-own.test.ts` | `covered` | Native value/dictionary/file/iterator semantics already cover the published correction; focused existing regressions and full suite retained. |
+| `M` | `packages/ai/src/util/write-to-server-response.test.ts` | `out-of-scope` | Node HTTP/SSE/diagnostics-channel adapter; Swift returns AsyncSequence rather than a browser HTTP response. |
+| `M` | `packages/alibaba/src/alibaba-embedding-model.test.ts` | `identity-only` | Exact headers/model-ID fixtures reviewed; version/prefix assertions updated, existing provider builder/parser/stream coverage retained. |
+| `M` | `packages/amazon-bedrock/src/amazon-bedrock-chat-language-model-options.test.ts` | `ported` | Published provider behavior translated in WeeklyProviders/WeeklyAzureAudio/WeeklyImageAndCore tests plus affected existing provider suites. |
+| `M` | `packages/amazon-bedrock/src/amazon-bedrock-chat-language-model.test.ts` | `ported` | Published provider behavior translated in WeeklyProviders/WeeklyAzureAudio/WeeklyImageAndCore tests plus affected existing provider suites. |
+| `M` | `packages/amazon-bedrock/src/amazon-bedrock-image-model.test.ts` | `ported` | Published provider behavior translated in WeeklyProviders/WeeklyAzureAudio/WeeklyImageAndCore tests plus affected existing provider suites. |
+| `M` | `packages/amazon-bedrock/src/amazon-bedrock-prepare-tools.test.ts` | `ported` | Published provider behavior translated in WeeklyProviders/WeeklyAzureAudio/WeeklyImageAndCore tests plus affected existing provider suites. |
+| `M` | `packages/amazon-bedrock/src/amazon-bedrock-provider.test.ts` | `ported` | Published provider behavior translated in WeeklyProviders/WeeklyAzureAudio/WeeklyImageAndCore tests plus affected existing provider suites. |
+| `M` | `packages/amazon-bedrock/src/amazon-bedrock-sigv4-fetch.test.ts` | `ported` | Published provider behavior translated in WeeklyProviders/WeeklyAzureAudio/WeeklyImageAndCore tests plus affected existing provider suites. |
+| `M` | `packages/amazon-bedrock/src/anthropic/amazon-bedrock-anthropic-provider.test.ts` | `ported` | Published provider behavior translated in WeeklyProviders/WeeklyAzureAudio/WeeklyImageAndCore tests plus affected existing provider suites. |
+| `M` | `packages/amazon-bedrock/src/inject-fetch-headers.test.ts` | `ported` | Published provider behavior translated in WeeklyProviders/WeeklyAzureAudio/WeeklyImageAndCore tests plus affected existing provider suites. |
+| `M` | `packages/amazon-bedrock/src/mantle/bedrock-mantle-provider.test.ts` | `ported` | Published provider behavior translated in WeeklyProviders/WeeklyAzureAudio/WeeklyImageAndCore tests plus affected existing provider suites. |
+| `A` | `packages/amazon-bedrock/src/region-validation.test.ts` | `ported` | Published provider behavior translated in WeeklyProviders/WeeklyAzureAudio/WeeklyImageAndCore tests plus affected existing provider suites. |
+| `A` | `packages/amazon-bedrock/src/resolve-amazon-bedrock-base-url.test.ts` | `ported` | Published provider behavior translated in WeeklyProviders/WeeklyAzureAudio/WeeklyImageAndCore tests plus affected existing provider suites. |
+| `M` | `packages/angular/src/lib/chat.ng.test.ts` | `out-of-scope` | Framework/harness/workflow/tooling or React surface absent from this Swift provider package. |
+| `M` | `packages/anthropic-aws/src/anthropic-aws-fetch.test.ts` | `ported` | Published provider behavior translated in WeeklyProviders/WeeklyAzureAudio/WeeklyImageAndCore tests plus affected existing provider suites. |
+| `A` | `packages/anthropic-aws/src/region-validation.test.ts` | `ported` | Published provider behavior translated in WeeklyProviders/WeeklyAzureAudio/WeeklyImageAndCore tests plus affected existing provider suites. |
+| `M` | `packages/anthropic/src/anthropic-batch.test.ts` | `ported` | Published provider behavior translated in WeeklyProviders/WeeklyAzureAudio/WeeklyImageAndCore tests plus affected existing provider suites. |
+| `M` | `packages/anthropic/src/anthropic-language-model.test.ts` | `ported` | Published provider behavior translated in WeeklyProviders/WeeklyAzureAudio/WeeklyImageAndCore tests plus affected existing provider suites. |
+| `M` | `packages/anthropic/src/convert-to-anthropic-prompt.test.ts` | `ported` | Published provider behavior translated in WeeklyProviders/WeeklyAzureAudio/WeeklyImageAndCore tests plus affected existing provider suites. |
+| `M` | `packages/assemblyai/src/assemblyai-transcription-model.test.ts` | `identity-only` | Exact headers/model-ID fixtures reviewed; version/prefix assertions updated, existing provider builder/parser/stream coverage retained. |
+| `A` | `packages/azure/src/azure-mai-transcription-model.test.ts` | `ported` | Published provider behavior translated in WeeklyProviders/WeeklyAzureAudio/WeeklyImageAndCore tests plus affected existing provider suites. |
+| `M` | `packages/azure/src/azure-openai-provider.test.ts` | `ported` | Published provider behavior translated in WeeklyProviders/WeeklyAzureAudio/WeeklyImageAndCore tests plus affected existing provider suites. |
+| `A` | `packages/azure/src/azure-speech-model.test.ts` | `ported` | Published provider behavior translated in WeeklyProviders/WeeklyAzureAudio/WeeklyImageAndCore tests plus affected existing provider suites. |
+| `A` | `packages/azure/src/azure-transcription-model.test.ts` | `ported` | Published provider behavior translated in WeeklyProviders/WeeklyAzureAudio/WeeklyImageAndCore tests plus affected existing provider suites. |
+| `M` | `packages/baseten/src/baseten-provider.unit.test.ts` | `identity-only` | Exact headers/model-ID fixtures reviewed; version/prefix assertions updated, existing provider builder/parser/stream coverage retained. |
+| `M` | `packages/black-forest-labs/src/black-forest-labs-image-model.test.ts` | `ported` | Published provider behavior translated in WeeklyProviders/WeeklyAzureAudio/WeeklyImageAndCore tests plus affected existing provider suites. |
+| `M` | `packages/black-forest-labs/src/black-forest-labs-provider.test.ts` | `ported` | Published provider behavior translated in WeeklyProviders/WeeklyAzureAudio/WeeklyImageAndCore tests plus affected existing provider suites. |
+| `M` | `packages/bytedance/src/bytedance-image-model.test.ts` | `identity-only` | Exact headers/model-ID fixtures reviewed; version/prefix assertions updated, existing provider builder/parser/stream coverage retained. |
+| `M` | `packages/cartesia/src/cartesia-speech-model.test.ts` | `identity-only` | Exact headers/model-ID fixtures reviewed; version/prefix assertions updated, existing provider builder/parser/stream coverage retained. |
+| `M` | `packages/cartesia/src/cartesia-transcription-model.test.ts` | `identity-only` | Exact headers/model-ID fixtures reviewed; version/prefix assertions updated, existing provider builder/parser/stream coverage retained. |
+| `M` | `packages/cerebras/src/cerebras-provider.test.ts` | `identity-only` | Exact headers/model-ID fixtures reviewed; version/prefix assertions updated, existing provider builder/parser/stream coverage retained. |
+| `M` | `packages/cohere/src/cohere-embedding-model.test.ts` | `identity-only` | Exact headers/model-ID fixtures reviewed; version/prefix assertions updated, existing provider builder/parser/stream coverage retained. |
+| `M` | `packages/deepgram/src/deepgram-speech-model.test.ts` | `ported` | Published provider behavior translated in WeeklyProviders/WeeklyAzureAudio/WeeklyImageAndCore tests plus affected existing provider suites. |
+| `M` | `packages/deepgram/src/deepgram-transcription-model.test.ts` | `ported` | Published provider behavior translated in WeeklyProviders/WeeklyAzureAudio/WeeklyImageAndCore tests plus affected existing provider suites. |
+| `M` | `packages/deepinfra/src/deepinfra-image-model.test.ts` | `ported` | Published provider behavior translated in WeeklyProviders/WeeklyAzureAudio/WeeklyImageAndCore tests plus affected existing provider suites. |
+| `M` | `packages/deepseek/src/chat/convert-to-deepseek-usage.test.ts` | `ported` | Published provider behavior translated in WeeklyProviders/WeeklyAzureAudio/WeeklyImageAndCore tests plus affected existing provider suites. |
+| `M` | `packages/devtools/src/db.test.ts` | `out-of-scope` | Framework/harness/workflow/tooling or React surface absent from this Swift provider package. |
+| `M` | `packages/devtools/src/integration.test.ts` | `out-of-scope` | Framework/harness/workflow/tooling or React surface absent from this Swift provider package. |
+| `M` | `packages/elevenlabs/src/elevenlabs-speech-model.test.ts` | `identity-only` | Exact headers/model-ID fixtures reviewed; version/prefix assertions updated, existing provider builder/parser/stream coverage retained. |
+| `M` | `packages/elevenlabs/src/elevenlabs-transcription-model.test.ts` | `identity-only` | Exact headers/model-ID fixtures reviewed; version/prefix assertions updated, existing provider builder/parser/stream coverage retained. |
+| `M` | `packages/fal/src/fal-image-model.test.ts` | `ported` | Published provider behavior translated in WeeklyProviders/WeeklyAzureAudio/WeeklyImageAndCore tests plus affected existing provider suites. |
+| `M` | `packages/fireworks/src/fireworks-image-model.test.ts` | `ported` | Published provider behavior translated in WeeklyProviders/WeeklyAzureAudio/WeeklyImageAndCore tests plus affected existing provider suites. |
+| `M` | `packages/fish-audio/src/fish-audio-speech-model.test.ts` | `identity-only` | Exact headers/model-ID fixtures reviewed; version/prefix assertions updated, existing provider builder/parser/stream coverage retained. |
+| `M` | `packages/fish-audio/src/fish-audio-transcription-model.test.ts` | `identity-only` | Exact headers/model-ID fixtures reviewed; version/prefix assertions updated, existing provider builder/parser/stream coverage retained. |
+| `M` | `packages/gateway/src/gateway-fetch-metadata.test.ts` | `ported` | Published provider behavior translated in WeeklyProviders/WeeklyAzureAudio/WeeklyImageAndCore tests plus affected existing provider suites. |
+| `M` | `packages/gateway/src/gateway-provider-options.test.ts` | `ported` | Published provider behavior translated in WeeklyProviders/WeeklyAzureAudio/WeeklyImageAndCore tests plus affected existing provider suites. |
+| `M` | `packages/gateway/src/gateway-provider.test.ts` | `ported` | Published provider behavior translated in WeeklyProviders/WeeklyAzureAudio/WeeklyImageAndCore tests plus affected existing provider suites. |
+| `M` | `packages/gateway/src/gateway-speech-model.test.ts` | `ported` | Published provider behavior translated in WeeklyProviders/WeeklyAzureAudio/WeeklyImageAndCore tests plus affected existing provider suites. |
+| `M` | `packages/gateway/src/gateway-transcription-model.test.ts` | `ported` | Published provider behavior translated in WeeklyProviders/WeeklyAzureAudio/WeeklyImageAndCore tests plus affected existing provider suites. |
+| `M` | `packages/gladia/src/gladia-transcription-model.test.ts` | `identity-only` | Exact headers/model-ID fixtures reviewed; version/prefix assertions updated, existing provider builder/parser/stream coverage retained. |
+| `M` | `packages/gmicloud/src/gmicloud-provider.test.ts` | `identity-only` | Exact headers/model-ID fixtures reviewed; version/prefix assertions updated, existing provider builder/parser/stream coverage retained. |
+| `M` | `packages/google-vertex/src/edge/google-vertex-auth-edge.test.ts` | `covered` | Swift-native OAuth transport uses its existing URL/header types; browser edge credential behavior has no separate target. |
+| `M` | `packages/google-vertex/src/gemini-transcription/google-vertex-gemini-transcription-model.test.ts` | `deferred` | Vertex Gemini transcription adapter remains absent; Chirp and speech are separate implemented routes. |
+| `M` | `packages/google-vertex/src/google-vertex-cloud-tts-speech-model.test.ts` | `ported` | Published provider behavior translated in WeeklyProviders/WeeklyAzureAudio/WeeklyImageAndCore tests plus affected existing provider suites. |
+| `M` | `packages/google-vertex/src/google-vertex-embedding-model.test.ts` | `ported` | Published provider behavior translated in WeeklyProviders/WeeklyAzureAudio/WeeklyImageAndCore tests plus affected existing provider suites. |
+| `M` | `packages/google-vertex/src/google-vertex-image-model.test.ts` | `ported` | Published provider behavior translated in WeeklyProviders/WeeklyAzureAudio/WeeklyImageAndCore tests plus affected existing provider suites. |
+| `A` | `packages/google-vertex/src/google-vertex-location-validation.test.ts` | `ported` | Published provider behavior translated in WeeklyProviders/WeeklyAzureAudio/WeeklyImageAndCore tests plus affected existing provider suites. |
+| `M` | `packages/google-vertex/src/google-vertex-transcription-model.test.ts` | `ported` | Published provider behavior translated in WeeklyProviders/WeeklyAzureAudio/WeeklyImageAndCore tests plus affected existing provider suites. |
+| `M` | `packages/google/src/google-embedding-model.test.ts` | `ported` | Published provider behavior translated in WeeklyProviders/WeeklyAzureAudio/WeeklyImageAndCore tests plus affected existing provider suites. |
+| `M` | `packages/google/src/google-image-model.test.ts` | `ported` | Published provider behavior translated in WeeklyProviders/WeeklyAzureAudio/WeeklyImageAndCore tests plus affected existing provider suites. |
+| `M` | `packages/google/src/google-language-model.test.ts` | `ported` | Published provider behavior translated in WeeklyProviders/WeeklyAzureAudio/WeeklyImageAndCore tests plus affected existing provider suites. |
+| `M` | `packages/google/src/google-provider.test.ts` | `ported` | Published provider behavior translated in WeeklyProviders/WeeklyAzureAudio/WeeklyImageAndCore tests plus affected existing provider suites. |
+| `M` | `packages/google/src/google-speech-model.test.ts` | `ported` | Published provider behavior translated in WeeklyProviders/WeeklyAzureAudio/WeeklyImageAndCore tests plus affected existing provider suites. |
+| `M` | `packages/google/src/realtime/google-realtime-event-mapper.test.ts` | `deferred` | Gemini transcription/Realtime adapter remains a dedicated native provider vertical. |
+| `M` | `packages/google/src/transcription/google-transcription-model.test.ts` | `deferred` | Gemini transcription/Realtime adapter remains a dedicated native provider vertical. |
+| `M` | `packages/groq/src/groq-chat-language-model.test.ts` | `identity-only` | Exact headers/model-ID fixtures reviewed; version/prefix assertions updated, existing provider builder/parser/stream coverage retained. |
+| `M` | `packages/groq/src/groq-transcription-model.test.ts` | `identity-only` | Exact headers/model-ID fixtures reviewed; version/prefix assertions updated, existing provider builder/parser/stream coverage retained. |
+| `M` | `packages/harness-acp/src/acp-auth.test.ts` | `out-of-scope` | Framework/harness/workflow/tooling or React surface absent from this Swift provider package. |
+| `M` | `packages/harness-acp/src/acp-harness.test.ts` | `out-of-scope` | Framework/harness/workflow/tooling or React surface absent from this Swift provider package. |
+| `A` | `packages/harness-acp/src/v1/bridge/canonical-json-fingerprint.test.ts` | `out-of-scope` | Framework/harness/workflow/tooling or React surface absent from this Swift provider package. |
+| `M` | `packages/harness-acp/src/v1/bridge/host-tool-correlation.test.ts` | `out-of-scope` | Framework/harness/workflow/tooling or React surface absent from this Swift provider package. |
+| `M` | `packages/harness-acp/src/v1/bridge/host-tool-mcp-http.test.ts` | `out-of-scope` | Framework/harness/workflow/tooling or React surface absent from this Swift provider package. |
+| `A` | `packages/harness-acp/src/v1/bridge/host-tool-relay-authorization.test.ts` | `out-of-scope` | Framework/harness/workflow/tooling or React surface absent from this Swift provider package. |
+| `M` | `packages/harness-acp/src/v1/bridge/host-tool-relay-client.test.ts` | `out-of-scope` | Framework/harness/workflow/tooling or React surface absent from this Swift provider package. |
+| `M` | `packages/harness-acp/src/v1/bridge/host-tool-relay.test.ts` | `out-of-scope` | Framework/harness/workflow/tooling or React surface absent from this Swift provider package. |
+| `M` | `packages/harness-acp/src/v1/bridge/permission-controller.test.ts` | `out-of-scope` | Framework/harness/workflow/tooling or React surface absent from this Swift provider package. |
+| `M` | `packages/harness-acp/src/v1/bridge/profile-values.test.ts` | `out-of-scope` | Framework/harness/workflow/tooling or React surface absent from this Swift provider package. |
+| `M` | `packages/harness-acp/src/v1/bridge/protocol-configuration.test.ts` | `out-of-scope` | Framework/harness/workflow/tooling or React surface absent from this Swift provider package. |
+| `M` | `packages/harness-acp/src/v1/implementation.test.ts` | `out-of-scope` | Framework/harness/workflow/tooling or React surface absent from this Swift provider package. |
+| `M` | `packages/harness-claude-code/src/bridge/create-emit-stream-event.test.ts` | `out-of-scope` | Framework/harness/workflow/tooling or React surface absent from this Swift provider package. |
+| `M` | `packages/harness-claude-code/src/bridge/index.test.ts` | `out-of-scope` | Framework/harness/workflow/tooling or React surface absent from this Swift provider package. |
+| `M` | `packages/harness-claude-code/src/claude-code-bridge-protocol.test.ts` | `out-of-scope` | Framework/harness/workflow/tooling or React surface absent from this Swift provider package. |
+| `M` | `packages/harness-claude-code/src/claude-code-harness.test.ts` | `out-of-scope` | Framework/harness/workflow/tooling or React surface absent from this Swift provider package. |
+| `M` | `packages/harness-cline/src/cline-session.test.ts` | `out-of-scope` | Framework/harness/workflow/tooling or React surface absent from this Swift provider package. |
+| `M` | `packages/harness-codex/src/bridge/create-emit-stream-event.test.ts` | `out-of-scope` | Framework/harness/workflow/tooling or React surface absent from this Swift provider package. |
+| `M` | `packages/harness-codex/src/codex-harness.test.ts` | `out-of-scope` | Framework/harness/workflow/tooling or React surface absent from this Swift provider package. |
+| `M` | `packages/harness-codex/src/codex-instructions.test.ts` | `out-of-scope` | Framework/harness/workflow/tooling or React surface absent from this Swift provider package. |
+| `M` | `packages/harness-cursor/src/cursor-harness.test.ts` | `out-of-scope` | Framework/harness/workflow/tooling or React surface absent from this Swift provider package. |
+| `M` | `packages/harness-deepagents/src/deepagents-harness.test.ts` | `out-of-scope` | Framework/harness/workflow/tooling or React surface absent from this Swift provider package. |
+| `M` | `packages/harness-fx/src/fx-harness.test.ts` | `out-of-scope` | Framework/harness/workflow/tooling or React surface absent from this Swift provider package. |
+| `M` | `packages/harness-github-copilot/src/github-copilot-harness.test.ts` | `out-of-scope` | Framework/harness/workflow/tooling or React surface absent from this Swift provider package. |
+| `M` | `packages/harness-grok-build/src/grok-build-harness.test.ts` | `out-of-scope` | Framework/harness/workflow/tooling or React surface absent from this Swift provider package. |
+| `M` | `packages/harness-opencode/src/bridge/index.test.ts` | `out-of-scope` | Framework/harness/workflow/tooling or React surface absent from this Swift provider package. |
+| `M` | `packages/harness-opencode/src/opencode-auth.test.ts` | `out-of-scope` | Framework/harness/workflow/tooling or React surface absent from this Swift provider package. |
+| `M` | `packages/harness-opencode/src/opencode-harness.test.ts` | `out-of-scope` | Framework/harness/workflow/tooling or React surface absent from this Swift provider package. |
+| `M` | `packages/harness-pi/src/pi-auth.test.ts` | `out-of-scope` | Framework/harness/workflow/tooling or React surface absent from this Swift provider package. |
+| `M` | `packages/harness-pi/src/pi-session.test.ts` | `out-of-scope` | Framework/harness/workflow/tooling or React surface absent from this Swift provider package. |
+| `M` | `packages/harness/src/agent/create-harness-sandbox-template.test.ts` | `out-of-scope` | Framework/harness/workflow/tooling or React surface absent from this Swift provider package. |
+| `M` | `packages/harness/src/agent/harness-agent.test.ts` | `out-of-scope` | Framework/harness/workflow/tooling or React surface absent from this Swift provider package. |
+| `M` | `packages/harness/src/agent/internal/run-prompt.test.ts` | `out-of-scope` | Framework/harness/workflow/tooling or React surface absent from this Swift provider package. |
+| `M` | `packages/harness/src/agent/internal/sandbox-bootstrap.test.ts` | `out-of-scope` | Framework/harness/workflow/tooling or React surface absent from this Swift provider package. |
+| `M` | `packages/harness/src/agent/internal/turn-telemetry.test.ts` | `out-of-scope` | Framework/harness/workflow/tooling or React surface absent from this Swift provider package. |
+| `M` | `packages/harness/src/agent/observability/file-reporter.test.ts` | `out-of-scope` | Framework/harness/workflow/tooling or React surface absent from this Swift provider package. |
+| `M` | `packages/harness/src/agent/telemetry-integration.test.ts` | `out-of-scope` | Framework/harness/workflow/tooling or React surface absent from this Swift provider package. |
+| `A` | `packages/harness/src/errors/harness-history-unavailable-error.test.ts` | `out-of-scope` | Framework/harness/workflow/tooling or React surface absent from this Swift provider package. |
+| `M` | `packages/harness/src/utils/credential-forwarding.test.ts` | `out-of-scope` | Framework/harness/workflow/tooling or React surface absent from this Swift provider package. |
+| `M` | `packages/hume/src/hume-speech-model.test.ts` | `identity-only` | Exact headers/model-ID fixtures reviewed; version/prefix assertions updated, existing provider builder/parser/stream coverage retained. |
+| `M` | `packages/langchain/src/adapter.test.ts` | `out-of-scope` | Framework/harness/workflow/tooling or React surface absent from this Swift provider package. |
+| `M` | `packages/langchain/src/utils.test.ts` | `out-of-scope` | Framework/harness/workflow/tooling or React surface absent from this Swift provider package. |
+| `M` | `packages/luma/src/luma-image-model.test.ts` | `ported` | Published provider behavior translated in WeeklyProviders/WeeklyAzureAudio/WeeklyImageAndCore tests plus affected existing provider suites. |
+| `A` | `packages/mcp/src/index.test.ts` | `ported` | Published provider behavior translated in WeeklyProviders/WeeklyAzureAudio/WeeklyImageAndCore tests plus affected existing provider suites. |
+| `M` | `packages/mcp/src/tool/mcp-client.test.ts` | `ported` | Published provider behavior translated in WeeklyProviders/WeeklyAzureAudio/WeeklyImageAndCore tests plus affected existing provider suites. |
+| `M` | `packages/mcp/src/tool/mcp-sse-transport.test.ts` | `ported` | Published provider behavior translated in WeeklyProviders/WeeklyAzureAudio/WeeklyImageAndCore tests plus affected existing provider suites. |
+| `A` | `packages/mcp/src/tool/oauth-credential-invalidation.test.ts` | `ported` | Published provider behavior translated in WeeklyProviders/WeeklyAzureAudio/WeeklyImageAndCore tests plus affected existing provider suites. |
+| `M` | `packages/mcp/src/tool/oauth.test.ts` | `ported` | Published provider behavior translated in WeeklyProviders/WeeklyAzureAudio/WeeklyImageAndCore tests plus affected existing provider suites. |
+| `M` | `packages/minimax/src/minimax-provider.test.ts` | `identity-only` | Exact headers/model-ID fixtures reviewed; version/prefix assertions updated, existing provider builder/parser/stream coverage retained. |
+| `A` | `packages/mistral/src/map-mistral-finish-reason.test.ts` | `ported` | Published provider behavior translated in WeeklyProviders/WeeklyAzureAudio/WeeklyImageAndCore tests plus affected existing provider suites. |
+| `M` | `packages/mistral/src/mistral-chat-language-model.test.ts` | `ported` | Published provider behavior translated in WeeklyProviders/WeeklyAzureAudio/WeeklyImageAndCore tests plus affected existing provider suites. |
+| `M` | `packages/mistral/src/mistral-embedding-model.test.ts` | `ported` | Published provider behavior translated in WeeklyProviders/WeeklyAzureAudio/WeeklyImageAndCore tests plus affected existing provider suites. |
+| `M` | `packages/mistral/src/mistral-speech-model.test.ts` | `ported` | Published provider behavior translated in WeeklyProviders/WeeklyAzureAudio/WeeklyImageAndCore tests plus affected existing provider suites. |
+| `M` | `packages/mistral/src/mistral-transcription-model.test.ts` | `ported` | Published provider behavior translated in WeeklyProviders/WeeklyAzureAudio/WeeklyImageAndCore tests plus affected existing provider suites. |
+| `M` | `packages/open-responses/src/open-responses-extension.test.ts` | `deferred` | Bare extension codec registry and registration/type-collision tests need the existing missing native registry. |
+| `M` | `packages/open-responses/src/responses/open-responses-language-model.test.ts` | `ported` | Published provider behavior translated in WeeklyProviders/WeeklyAzureAudio/WeeklyImageAndCore tests plus affected existing provider suites. |
+| `M` | `packages/openai-compatible/src/chat/convert-to-openai-compatible-chat-messages.test.ts` | `ported` | Published provider behavior translated in WeeklyProviders/WeeklyAzureAudio/WeeklyImageAndCore tests plus affected existing provider suites. |
+| `M` | `packages/openai-compatible/src/chat/openai-compatible-chat-language-model.test.ts` | `ported` | Published provider behavior translated in WeeklyProviders/WeeklyAzureAudio/WeeklyImageAndCore tests plus affected existing provider suites. |
+| `M` | `packages/openai-compatible/src/image/openai-compatible-image-model.test.ts` | `ported` | Published provider behavior translated in WeeklyProviders/WeeklyAzureAudio/WeeklyImageAndCore tests plus affected existing provider suites. |
+| `M` | `packages/openai-compatible/src/openai-compatible-provider.test.ts` | `ported` | Published provider behavior translated in WeeklyProviders/WeeklyAzureAudio/WeeklyImageAndCore tests plus affected existing provider suites. |
+| `M` | `packages/openai/src/chat/openai-chat-language-model.test.ts` | `ported` | Published provider behavior translated in WeeklyProviders/WeeklyAzureAudio/WeeklyImageAndCore tests plus affected existing provider suites. |
+| `M` | `packages/openai/src/completion/openai-completion-language-model.test.ts` | `ported` | Published provider behavior translated in WeeklyProviders/WeeklyAzureAudio/WeeklyImageAndCore tests plus affected existing provider suites. |
+| `M` | `packages/openai/src/embedding/openai-embedding-model.test.ts` | `ported` | Published provider behavior translated in WeeklyProviders/WeeklyAzureAudio/WeeklyImageAndCore tests plus affected existing provider suites. |
+| `M` | `packages/openai/src/image/openai-image-model.test.ts` | `ported` | Published provider behavior translated in WeeklyProviders/WeeklyAzureAudio/WeeklyImageAndCore tests plus affected existing provider suites. |
+| `M` | `packages/openai/src/normalize-openai-json-schema.test.ts` | `ported` | Published provider behavior translated in WeeklyProviders/WeeklyAzureAudio/WeeklyImageAndCore tests plus affected existing provider suites. |
+| `M` | `packages/openai/src/openai-language-model-capabilities.test.ts` | `ported` | Published provider behavior translated in WeeklyProviders/WeeklyAzureAudio/WeeklyImageAndCore tests plus affected existing provider suites. |
+| `M` | `packages/openai/src/speech/openai-speech-model.test.ts` | `ported` | Published provider behavior translated in WeeklyProviders/WeeklyAzureAudio/WeeklyImageAndCore tests plus affected existing provider suites. |
+| `M` | `packages/openai/src/transcription/openai-transcription-model.test.ts` | `ported` | Published provider behavior translated in WeeklyProviders/WeeklyAzureAudio/WeeklyImageAndCore tests plus affected existing provider suites. |
+| `A` | `packages/otel/src/finish-reason-status.test.ts` | `out-of-scope` | Framework/harness/workflow/tooling or React surface absent from this Swift provider package. |
+| `M` | `packages/otel/src/legacy-open-telemetry.test.ts` | `out-of-scope` | Framework/harness/workflow/tooling or React surface absent from this Swift provider package. |
+| `M` | `packages/otel/src/open-telemetry.test.ts` | `out-of-scope` | Framework/harness/workflow/tooling or React surface absent from this Swift provider package. |
+| `M` | `packages/perplexity/src/perplexity-embedding-model.test.ts` | `ported` | Published provider behavior translated in WeeklyProviders/WeeklyAzureAudio/WeeklyImageAndCore tests plus affected existing provider suites. |
+| `M` | `packages/perplexity/src/perplexity-language-model.test.ts` | `ported` | Published provider behavior translated in WeeklyProviders/WeeklyAzureAudio/WeeklyImageAndCore tests plus affected existing provider suites. |
+| `M` | `packages/prodia/src/prodia-image-model.test.ts` | `ported` | Published provider behavior translated in WeeklyProviders/WeeklyAzureAudio/WeeklyImageAndCore tests plus affected existing provider suites. |
+| `M` | `packages/prodia/src/prodia-provider.test.ts` | `ported` | Published provider behavior translated in WeeklyProviders/WeeklyAzureAudio/WeeklyImageAndCore tests plus affected existing provider suites. |
+| `M` | `packages/provider-utils/src/get-from-api.test.ts` | `covered` | Native transport/header dictionaries already represent the reviewed helper behavior; package identity synchronized. |
+| `M` | `packages/provider-utils/src/get-runtime-environment-user-agent.test.ts` | `covered` | Native transport/header dictionaries already represent the reviewed helper behavior; package identity synchronized. |
+| `A` | `packages/provider-utils/src/is-valid-hostname-part.test.ts` | `ported` | Published provider behavior translated in WeeklyProviders/WeeklyAzureAudio/WeeklyImageAndCore tests plus affected existing provider suites. |
+| `A` | `packages/provider-utils/src/streaming-tool-call-argument-state.test.ts` | `ported` | Published provider behavior translated in WeeklyProviders/WeeklyAzureAudio/WeeklyImageAndCore tests plus affected existing provider suites. |
+| `M` | `packages/provider-utils/src/streaming-tool-call-tracker.test.ts` | `ported` | Published provider behavior translated in WeeklyProviders/WeeklyAzureAudio/WeeklyImageAndCore tests plus affected existing provider suites. |
+| `M` | `packages/provider-utils/src/transcription-stream-envelope.test.ts` | `ported` | Published provider behavior translated in WeeklyProviders/WeeklyAzureAudio/WeeklyImageAndCore tests plus affected existing provider suites. |
+| `M` | `packages/quiverai/src/quiverai-generate-image.test.ts` | `ported` | Published provider behavior translated in WeeklyProviders/WeeklyAzureAudio/WeeklyImageAndCore tests plus affected existing provider suites. |
+| `M` | `packages/quiverai/src/quiverai-image-model.test.ts` | `ported` | Published provider behavior translated in WeeklyProviders/WeeklyAzureAudio/WeeklyImageAndCore tests plus affected existing provider suites. |
+| `M` | `packages/quiverai/src/quiverai-language-model.test.ts` | `ported` | Published provider behavior translated in WeeklyProviders/WeeklyAzureAudio/WeeklyImageAndCore tests plus affected existing provider suites. |
+| `M` | `packages/quiverai/src/quiverai-provider.test.ts` | `ported` | Published provider behavior translated in WeeklyProviders/WeeklyAzureAudio/WeeklyImageAndCore tests plus affected existing provider suites. |
+| `M` | `packages/react/src/use-chat.ui.test.tsx` | `out-of-scope` | Framework/harness/workflow/tooling or React surface absent from this Swift provider package. |
+| `M` | `packages/replicate/src/replicate-image-model.test.ts` | `ported` | Published provider behavior translated in WeeklyProviders/WeeklyAzureAudio/WeeklyImageAndCore tests plus affected existing provider suites. |
+| `M` | `packages/revai/src/revai-transcription-model.test.ts` | `identity-only` | Exact headers/model-ID fixtures reviewed; version/prefix assertions updated, existing provider builder/parser/stream coverage retained. |
+| `M` | `packages/svelte/src/chat.svelte.test.ts` | `out-of-scope` | Framework/harness/workflow/tooling or React surface absent from this Swift provider package. |
+| `M` | `packages/togetherai/src/togetherai-image-model.test.ts` | `ported` | Published provider behavior translated in WeeklyProviders/WeeklyAzureAudio/WeeklyImageAndCore tests plus affected existing provider suites. |
+| `A` | `packages/topaz/src/topaz-image-model.test.ts` | `announced` | New untracked image/video enhancement provider; three fixtures reviewed, no automatic implementation. |
+| `A` | `packages/topaz/src/topaz-provider.test.ts` | `announced` | New untracked image/video enhancement provider; three fixtures reviewed, no automatic implementation. |
+| `A` | `packages/topaz/src/topaz-video-model.test.ts` | `announced` | New untracked image/video enhancement provider; three fixtures reviewed, no automatic implementation. |
+| `M` | `packages/tui/src/tui/layout.test.ts` | `out-of-scope` | Framework/harness/workflow/tooling or React surface absent from this Swift provider package. |
+| `M` | `packages/tui/src/tui/markdown.test.ts` | `out-of-scope` | Framework/harness/workflow/tooling or React surface absent from this Swift provider package. |
+| `A` | `packages/tui/src/tui/sanitize-terminal-text.test.ts` | `out-of-scope` | Framework/harness/workflow/tooling or React surface absent from this Swift provider package. |
+| `A` | `packages/tui/src/tui/terminal-renderer-security.test.ts` | `out-of-scope` | Framework/harness/workflow/tooling or React surface absent from this Swift provider package. |
+| `A` | `packages/tui/src/util/print-stream.test.ts` | `out-of-scope` | Framework/harness/workflow/tooling or React surface absent from this Swift provider package. |
+| `M` | `packages/typesafe-ai/src/typesafe-ai-evaluation-model.test.ts` | `identity-only` | Exact headers/model-ID fixtures reviewed; version/prefix assertions updated, existing provider builder/parser/stream coverage retained. |
+| `M` | `packages/voyage/src/voyage-embedding-model.test.ts` | `identity-only` | Exact headers/model-ID fixtures reviewed; version/prefix assertions updated, existing provider builder/parser/stream coverage retained. |
+| `M` | `packages/vue/src/chat.vue.ui.test.tsx` | `out-of-scope` | Framework/harness/workflow/tooling or React surface absent from this Swift provider package. |
+| `M` | `packages/workflow-harness/src/run-harness-agent-output.test.ts` | `out-of-scope` | Framework/harness/workflow/tooling or React surface absent from this Swift provider package. |
+| `M` | `packages/workflow/src/do-stream-step.test.ts` | `out-of-scope` | Framework/harness/workflow/tooling or React surface absent from this Swift provider package. |
+| `M` | `packages/workflow/src/stream-text-iterator.test.ts` | `out-of-scope` | Framework/harness/workflow/tooling or React surface absent from this Swift provider package. |
+| `A` | `packages/workflow/src/workflow-agent-transform.test.ts` | `out-of-scope` | Framework/harness/workflow/tooling or React surface absent from this Swift provider package. |
+| `M` | `packages/xai/src/xai-image-model.test.ts` | `ported` | Published provider behavior translated in WeeklyProviders/WeeklyAzureAudio/WeeklyImageAndCore tests plus affected existing provider suites. |
+| `M` | `packages/xai/src/xai-provider.test.ts` | `ported` | Published provider behavior translated in WeeklyProviders/WeeklyAzureAudio/WeeklyImageAndCore tests plus affected existing provider suites. |
+| `M` | `packages/xai/src/xai-speech-model.test.ts` | `ported` | Published provider behavior translated in WeeklyProviders/WeeklyAzureAudio/WeeklyImageAndCore tests plus affected existing provider suites. |
+| `M` | `packages/xai/src/xai-transcription-model.test.ts` | `ported` | Published provider behavior translated in WeeklyProviders/WeeklyAzureAudio/WeeklyImageAndCore tests plus affected existing provider suites. |
+| `M` | `packages/zai/src/zai-provider.test.ts` | `identity-only` | Exact headers/model-ID fixtures reviewed; version/prefix assertions updated, existing provider builder/parser/stream coverage retained. |
 
-| Behavior group | Paths | Status | Swift evidence / rationale |
-| --- | ---: | --- | --- |
-| `core-generated-files-and-tool-routing` | 6 | `ported` | Generate, stream, and batch materialize URL-backed files with shared abort/security handling while preserving opaque URIs; local-caller-only targets cannot execute through unexpected direct model calls. |
-| `core-generated-file-dns-pinning` | 1 | `deferred` | URL and redirect validation do not pin the resolver-selected connection address; a native URLSession/Network transport design is still required. |
-| `core-embedding-provider-options` | 3 | `ported` | The embedding model hook slices per-value provider options into each automatic batch and reuses transformed options on retry. |
-| `core-evaluation-telemetry` | 2 | `ported` | Evaluation start/end callbacks, model-call events, usage/results, errors, and allowlisted runtime context are covered. |
-| `core-speech-media-detection` | 1 | `ported` | L16, mu-law, and A-law formats map to canonical audio media types. |
-| `core-tool-approval-persistence` | 10 | `ported` | Schema-input provenance, refinement replay, tamper rejection, and earlier-message approval resume are covered. |
-| `core-ui-stream-cancellation` | 4 | `ported` | The async UI reducer calls one terminal callback and distinguishes cancel, abort, failure, and completion. |
-| `core-reasoning-stream-and-control` | 2 | `ported` | Per-text-ID overlapping extraction preserves text/reasoning with globally stable reasoning IDs, positioned provider control messages survive normalization, and reasoning pruning removes reasoning-file parts in scope. |
-| `core-js-compatibility-no-action` | 9 | `no-swift-action` | Provider V3, DOM streams, Node diagnostics, and TypeScript-only surfaces are not synthesized in Swift. |
-| `alibaba-json-schema-routing` | 2 | `ported` | Model-specific structured-output routing and request fixtures are translated. |
-| `amazon-bedrock-model-routing-and-tools` | 5 | `ported` | Capability/routing tables, forced-tool fallbacks, reasoning gates, Mantle routing, and deterministic Mistral IDs are covered. |
-| `anthropic-compaction-safeguards-opus55-toolset` | 5 | `ported` | Compaction, safeguards, Opus 5.5 gates, effort controls, and computer toolset request/result mapping are covered. |
-| `deepseek-tool-result-images` | 1 | `ported` | V4/Flash tool-result image forms remain validated multimodal content instead of collapsing to JSON text. |
-| `gateway-conditional-evaluation-and-browserbase` | 7 | `ported` | Conditional fallback/model attribution, Browserbase tools, filters, and lifecycle-status validation for batch cancellation are covered. |
-| `google-files-embedding-image-and-speech` | 9 | `ported` | File replay, schema/URI handling, embedding option slicing, finish metadata, Interactions offsets, and Gemini TTS are covered. |
-| `google-vertex-gcs-tool-results` | 1 | `ported` | Vertex enables the shared `gs://` tool-result path without credential forwarding to unrelated origins. |
-| `groq-empty-choice-error` | 1 | `ported` | Empty unary choices throw the exact structural response error. |
-| `mcp-environment-and-oauth-client-lifecycle` | 2 | `ported` | Stdio environment precedence and dynamic-vs-pre-registered OAuth credential lifecycle are covered. |
-| `open-responses-errors-custom-tools-and-input` | 5 | `ported` | Dynamic transport/error hooks, custom tools/results, JSON-object mode, stream-done fallback, and strict regex/lark grammar validation are covered. |
-| `openai-gpt6-schema-reasoning-and-speech` | 7 | `ported` | GPT-6 Sol/Luna capabilities, schemas, nested errors, positioned reasoning validation/deduplication, transcript fallback, and speech precedence are covered. |
-| `perplexity-agent-api-migration` | 4 | `ported` | Captured Agent API unary/stream fixtures cover multimodal history, tools, nullish optional events, sources, usage, and errors. |
-| `provider-utils-untrusted-url-fetch` | 4 | `ported` | Private-host rejection, origin-scoped credentials, redirect stripping, aborts, and limits are covered; DNS pinning stays separate. |
-| `quiverai-language-provider` | 3 | `ported` | Arrow 2 language requests, custom tools, strict retry/error mapping with integer status codes, and stream behavior are covered without JavaScript workflow serialization. |
-| `xai-response-identifiers-batch-and-video` | 4 | `ported` | Responses metadata/options and Imagine Video 1.5 storage, keyframe, audio, reference-precedence, and limit behavior are covered. |
-| `examples-and-live-integration-no-action` | 3 | `no-swift-action` | JavaScript example harnesses are not copied; deterministic provider tests own the portable behavior. |
-| `provider-test-maintenance-only` | 10 | `no-swift-action` | Formatting, snapshots, and TypeScript lint cleanup do not justify Swift runtime churn. |
-| `harness-core-product-surface` | 18 | `out-of-scope` | HarnessV1 is a separate product subsystem requiring its own architecture decision. |
-| `harness-runtime-adapters` | 52 | `out-of-scope` | Coding-agent runtime adapters are not model providers and depend on an unimplemented harness core. |
-| `sandbox-adapters` | 10 | `out-of-scope` | JustBash and Vercel sandbox integrations are separate product surfaces. |
-| `javascript-product-integrations` | 5 | `out-of-scope` | React, OpenTelemetry, workflow, and external JavaScript integrations are outside provider-facing Swift parity. |
+## Declaration-only paths
 
-Coverage reconciliation: 88 paths are portable and ported, one is deferred,
-22 require no Swift action, and 85 are out of scope. The 30 group counts total
-exactly 196, so deleted files and declaration-only paths remain visible rather
-than disappearing from provider-only summaries.
-
-Late exact-tag verification of `ai@7.0.117`, `@ai-sdk/react@4.0.120`,
-`@ai-sdk/gateway@4.0.95`, and `@ai-sdk/perplexity@5.0.1` found no new test
-path. The changed assertions cover the current Gateway evaluation fixture,
-conditional evaluation fallback/model attribution, and nullish Perplexity Agent
-SSE fields; React tests are unchanged. The path counts above remain stable.
-
-Follow-up on 2026-09-20: the user subsequently authorized complete ports of
-`@ai-sdk/typesafe-ai@3.0.4` and `@ai-sdk/zai@3.0.15`. Their provider runtime,
-translated tests, registry/capability rows, and public docs are now present.
-The `deferred` rows below remain the historical disposition of the weekly
-audit before that separately authorized follow-up.
-
-## 2026-09-20 Diff
-
-The generated executable inventory grows from 881 to 919 files and from 80 to
-81 groups. The exact path comparison returns 137 changed executable
-tests/specs: 43 added, 89 modified, and five deleted. The sorted
-`--name-status` output has SHA-256
-`23681b8ea4064220506a72415c5bf091efafe83827576dd1b0d54e2c3c7ff45a`.
-
-| Upstream test group | Paths | Status | Swift evidence / rationale |
-| --- | ---: | --- | --- |
-| `examples/ai-functions/**` | 2 | `covered/no-swift-action` | The xAI example fixture is covered by provider tests; the Next.js Live relay connection is application plumbing, while its portable server-WebSocket contract is covered by the OpenAI Live adapter. |
-| `packages/ai/**` | 46 | `ported/covered/deferred/no-swift-action` | Evaluation V4, tool discovery, prompt conversion, metadata, telemetry, transport parsing, extraction, UI/session, abort, and server-side continuous-realtime changes are represented by focused Swift core tests. Browser-only transport, JavaScript stream/DOM mechanics, Node cookie/DNS behavior, and framework-owned UI surfaces remain outside the native Swift runtime; broader typed UI-tool/autosubmit behavior remains explicit where no safe public Swift contract exists. |
-| `packages/alibaba/**` | 3 | `ported` | `preserveThinking`, model-aware defaults, and replay of assistant reasoning history have exact request regressions. |
-| `packages/amazon-bedrock/**` | 5 | `ported` | Opaque Anthropic family handling, recursive strict schemas, current warnings/bindings, and failed streaming-response propagation are covered. |
-| `packages/anthropic/**` | 3 | `ported` | The 20260318 web tools, deferred lifecycle, execution normalization, custom aliases, and the Messages-backed Evaluation adapter have focused fixtures. |
-| `packages/azure/**` | 1 | `ported/covered` | Azure inherits the corrected shared OpenAI Responses assistant-input conversion and retains its provider-specific request identity. |
-| `packages/black-forest-labs/**` | 2 | `ported` | Wall-clock polling aborts hung image requests and preserves terminal/error metadata. |
-| `packages/bytedance/**` | 1 | `ported` | Combined start/reference inputs now emit the exact `reference_image` role. |
-| `packages/code-mode/**` | 3 | `out-of-scope` | The JavaScript code-mode tool-search product is not exposed by the provider-facing SwiftPM library. |
-| `packages/deepseek/**` | 1 | `ported` | Empty choices now produce the exact structural response failure. |
-| `packages/fireworks/**` | 1 | `ported` | Image polling uses a wall-clock deadline that can abort a hung request. |
-| `packages/gateway/**` | 3 | `ported` | Native Evaluation V4 request/response/error mapping, model-catalog discovery, headers, aborts, and provider metadata are covered. |
-| `packages/google/**` | 8 | `ported/deferred` | Lossless JSON Schema conversion, block reasons, accumulated stream metadata/usage, image count behavior, and the Gemini-backed Evaluation adapter are ported. Google Realtime and shared multi-call image batching remain separate public-runtime gaps. |
-| `packages/google-vertex/**` | 2 | `covered/deferred` | Shared Google schema/model behavior is inherited; the published one-image limit still requires a provider-neutral `maxImagesPerCall` batching contract rather than a Vertex-only rewrite. |
-| `packages/harness-claude-code/**` | 1 | `out-of-scope` | Claude Code harness lifecycle belongs to the separate agent/harness product. |
-| `packages/harness-opencode/**` | 3 | `out-of-scope` | OpenCode harness configuration and process/session behavior are not provider-model surfaces. |
-| `packages/harness-pi/**` | 1 | `out-of-scope` | Pi harness integration is outside this SwiftPM provider library. |
-| `packages/langchain/**` | 2 | `out-of-scope` | LangChain adapter behavior is framework integration, not a Swift provider contract. |
-| `packages/mcp/**` | 2 | `ported` | Stored OAuth server metadata and concurrent authorization refresh/coalescing have focused Swift regressions. |
-| `packages/openai/**` | 8 | `ported/deferred` | Responses assistant-input/reference and image abort fixes, the Evaluation adapter, and the portable server-WebSocket OpenAI Live mapping are covered. Browser WebRTC remains deliberately deferred. |
-| `packages/openai-compatible/**` | 1 | `covered` | The changed stream behavior is already supplied by the shared compatible chat implementation and its focused regression. |
-| `packages/otel/**` | 1 | `no-swift-action` | The JavaScript OpenTelemetry adapter fixture does not add a new typed Swift telemetry contract. |
-| `packages/provider-utils/**` | 8 | `ported/no-swift-action` | AVIF/HEIC/AAC signatures and the shared Evaluation language adapter are ported. Undici, DOMException, and other JavaScript runtime mechanics do not map to Foundation networking. |
-| `packages/quiverai/**` | 3 | `ported` | Arrow 2/Telos generation, animation, editing, vectorization, references, credits, metadata, and revised limits have focused provider tests. |
-| `packages/react/**` | 8 | `out-of-scope` | React realtime/hooks/reducer ownership is not transplanted into `AIChatSession`; portable core behavior is covered separately. |
-| `packages/replicate/**` | 1 | `ported` | Image predictions continue polling after synchronous wait expiry with trusted-origin and terminal-output validation. |
-| `packages/togetherai/**` | 1 | `ported` | Gemini image requests omit unsupported diffusion fields and warn on seed while preserving supported options. |
-| `packages/typesafe-ai/**` | 2 | `deferred` | `@ai-sdk/typesafe-ai` is a newly discovered Evaluation-only provider; it is proposal-only in this run and needs its own factory, auth/request/error vertical, tests, registry row, and docs. |
-| `packages/vue/**` | 2 | `out-of-scope` | Vue chat/store behavior is a framework adapter rather than a native Swift provider surface. |
-| `packages/workflow/**` | 3 | `out-of-scope` | Durable JavaScript workflow orchestration is not exposed by SwiftAISDK. |
-| `packages/xai/**` | 9 | `ported` | Responses schema/batch behavior is aligned to xAI 5 while the existing chat entry point remains a documented legacy source-compatible Swift shim instead of an unrequested breaking removal; new code should use Responses. |
-
-Coverage check: the grouped counts total exactly 137. All five deleted paths,
-the new provider, and every changed untracked product group remain visible.
-
-### Declaration-only changes
-
-The inventory generator excludes `*.test-d.ts`, so these 18 changed paths are
-classified separately. Their sorted `--name-status` output has SHA-256
-`1b23803a9f97d726964256a1258df13faa0b003a7f1973263b9d8ed6a4909eb4`.
-
-| Declaration-only path or group | Paths | Status | Rationale |
-| --- | ---: | --- | --- |
-| `examples/ai-functions/**` | 1 | `no-swift-action` | Deprecated TypeScript option aliases do not change Swift source compatibility. |
-| `packages/ai/src/evaluate/**`; `registry/evaluation-model`; `registry/provider-registry` | 3 | `ported` | Evaluation model references, registry resolution, errors, and provider routing are public Swift types with focused tests. |
-| `packages/ai/src/tool-search/**` | 1 | `ported` | Dynamic tool discovery is represented through the portable Swift tool-caller contract. |
-| `packages/ai/src/ui/**` | 2 | `ported/deferred` | Portable error/message representation is covered; browser/framework-only UI ownership remains outside the native session. |
-| `packages/alibaba/**` | 1 | `ported` | The new `preserveThinking` provider option has a typed Swift counterpart. |
-| `packages/anthropic/**` | 1 | `ported` | The 20260318 hosted-tool options and aliases are represented by Swift provider tools/options. |
-| `packages/openai/src/live/**`; `packages/openai/src/realtime/**` | 3 | `ported/deferred` | Server-WebSocket OpenAI Live and the provider-neutral continuous contract are ported; browser WebRTC factory typing remains deferred. |
-| `packages/provider/**` | 2 | `ported` | JSON values and continuous Realtime V4 events have native Swift public contracts. |
-| `packages/quiverai/**` | 1 | `ported` | Arrow 2/Telos option families are exposed through Swift provider options. |
-| `packages/react/**`; `packages/vue/**` | 2 | `out-of-scope` | Framework hook types are not SwiftAISDK provider surfaces. |
-| `packages/xai/**` | 1 | `ported` | xAI 5 provider types are reflected while chat remains a legacy source-compatible shim; new code should use Responses. |
-
-Coverage check: the declaration groups total exactly 18 and include every
-added or modified declaration-test path.
-
-## 2026-09-13 Diff
-
-The generated executable inventory grows from 864 to 881 files. The exact
-path comparison returns 104 changed executable tests/specs: 19 added, 79
-modified, two deleted, and four renamed. The sorted `--name-status` output has
-SHA-256
-`b5700598b8846ea76ac7315d25f3ae8e3fbb246984022103401ac3eb64d430fe`.
-
-| Upstream test group | Paths | Status | Swift evidence / rationale |
-| --- | ---: | --- | --- |
-| `packages/ai/**` | 10 | `ported/covered/deferred/no-swift-action` | Provider-owned text/image Batch V4, empty-image retry classification, streaming tool-choice enforcement, rerank-index validation, ToolOutputError UI typing, and video webhook rejection ordering have Swift coverage. Existing embedding-count and split-array behavior remains covered. Generic callback `runtimeContext` needs a separate public Swift design; JavaScript `atob` mechanics do not map to Swift. |
-| `packages/alibaba/**` | 1 | `ported` | Empty `tool_calls` deltas no longer split an active reasoning stream. |
-| `packages/amazon-bedrock/**` | 3 | `ported` | Runtime, Agent Runtime, and Anthropic endpoints share explicit/service/global/partition-aware resolution; Mantle omits unsupported web-search source includes. |
-| `packages/anthropic/**` | 2 | `ported` | Provider-owned text Batch V4, cancel/list, per-request models, input-transformation metadata, and binding-prefix behavior are covered. |
-| `packages/azure/**` | 1 | `ported` | Foundry Responses history emits explicit `type: message` discriminators. |
-| `packages/bytedance/**` | 1 | `ported` | Explicit webhook callbacks override raw options and expired operations are terminal. |
-| `packages/deepseek/**` | 3 | `ported` | DeepSeek V4 aliases and uninterrupted reasoning across empty tool-call arrays are covered. |
-| `packages/gateway/**` | 4 | `ported` | Provider-owned text batches, image-batch rejection, image retryability, and unary/stream warning forwarding are covered. |
-| `packages/gladia/**` | 1 | `ported` | Expanded utterance fields and the full `providerMetadata.gladia` result are preserved. |
-| `packages/google/**` | 4 | `ported` | Provider-owned mixed text/image Batch V4, cancel/list, typed results, bounded tool-result downloads, and terminal prompt blocks are covered. |
-| `packages/google-vertex/**` | 2 | `ported` | Tool-result URL downloads are sequential, bounded, credential-free, redirect-validated, and user URLs remain untouched; prompt blocks are terminal. |
-| `packages/groq/**` | 1 | `ported` | Empty `tool_calls` deltas no longer close reasoning. |
-| `packages/hume/**` | 1 | `covered/no-swift-action` | Upstream corrects a test metadata namespace typo; Swift already uses the Hume namespace. |
-| `packages/klingai/**` | 1 | `ported` | Async start/status and callback precedence cover all endpoint modes. |
-| `packages/lmnt/**` | 2 | `covered/no-swift-action` | The tests were deleted with LMNT's removal from upstream main; the exact current published package remains tracked and unchanged. |
-| `packages/mcp/**` | 1 | `ported` | OAuth discovery validates initial targets and every redirect, scopes loopback trust, and never redirects credential POSTs. |
-| `packages/minimax/**` | 1 | `ported` | Async start/status preserves safe operation state, callback precedence, encoded IDs, terminal outcomes, headers, aborts, and redirect safety. |
-| `packages/mistral/**` | 1 | `ported` | The complete current reasoning-capable model set accepts reasoning effort without false warnings. |
-| `packages/moonshotai/**` | 1 | `covered` | Its shared parser already ignores empty tool-call arrays; provider regression evidence prevents routing drift. |
-| `packages/open-responses/**` | 1 | `ported` | User and tool-result images default invalid or absent detail to `auto` while preserving `low` and `high`. |
-| `packages/openai/**` | 11 | `ported` | Provider-owned batches, recursive schema normalization, async/programmatic tools, explicit empty-choice errors, Foundry message items, image 2.5 options, source includes, and `apply_patch` finish handling are covered. |
-| `packages/openai-compatible/**` | 1 | `ported` | Empty chat choices fail with the explicit structural response error. |
-| `packages/provider-utils/**` | 3 | `ported/no-swift-action` | GIF/BMP signatures and validated redirects are covered; Swift's native `Data` base64 conversion already avoids the JavaScript spread limit. |
-| `packages/xai/**` | 2 | `ported/covered` | Provider-owned mixed-model text/image batching with cancel/list is covered; existing compatible parsing already preserves reasoning across empty tool calls. |
-| `packages/otel/**` | 2 | `covered/no-swift-action` | The OpenTelemetry JavaScript attribute adapter does not add a new contract to SwiftAISDK's typed telemetry surface. |
-| `packages/react/**` | 1 | `out-of-scope` | React commit/Suspense ownership behavior has no equivalent in the framework-neutral chat session. |
-| `packages/harness*/**` | 36 | `out-of-scope` | Harness authentication, subscription discovery, OS credential stores, session bridges, model resolution, and the new GitHub Copilot adapter belong to separate coding-agent products. |
-| `packages/workflow/**`; `packages/workflow-harness/**` | 6 | `out-of-scope` | Workflow slicing, stream iterators, compatibility, and harness output are not exposed by the provider-facing Swift library. |
-
-Coverage check: the grouped counts total exactly 104. The four renames and two
-deletions remain represented, and no untracked package group is hidden by the
-provider-only audit.
-
-### Declaration-only changes
-
-The inventory generator excludes `*.test-d.ts`, so these 16 changed paths are
-classified separately. Their sorted `--name-status` output has SHA-256
-`63e3eab57c4ed64f3b3a389ce336e8fa76a1126aebaa59f5cbf708793f2eedcc`.
-
-| Declaration-only path | Status | Rationale |
-| --- | --- | --- |
-| `packages/ai/src/batch/batch-types.test-d.ts` | `ported` | Provider-owned text/image request and result unions have public Swift counterparts. |
-| `packages/ai/src/embed/embed.test-d.ts`; `embed-many.test-d.ts`; `rerank/rerank.test-d.ts` | `deferred` | Upstream callback `runtimeContext` needs a deliberate Swift callback/telemetry API instead of an untyped transplant. |
-| `packages/ai/src/ui/ui-messages.test-d.ts`; `validate-ui-messages.test-d.ts` | `ported` | Tool output errors are represented by a stable UI part and validation guard. |
-| `packages/anthropic/src/anthropic-provider.test-d.ts` | `ported` | The provider-level batch factory is typed and no longer bound to one language model. |
-| `packages/deepseek/src/deepseek-provider.test-d.ts` | `covered` | Swift uses forward-compatible string model IDs; the runtime alias behavior is tested separately. |
-| `packages/gateway/src/gateway-provider.test-d.ts` | `ported` | The provider-level text-only batch factory and rejected image request are typed. |
-| `packages/google/src/google-provider.test-d.ts` | `ported` | The provider-level mixed text/image batch factory is typed. |
-| `packages/openai/src/openai-provider.test-d.ts` | `ported` | The provider-level batch and updated tools/options are public Swift surfaces. |
-| `packages/xai/src/xai-provider.test-d.ts` | `ported` | The provider-level text/image batch surface is public and supports per-request models. |
-| `packages/harness-github-copilot/src/github-copilot-harness.test-d.ts`; `packages/harness-pi/src/pi-harness.test-d.ts`; `packages/harness/src/agent/harness-agent-settings.test-d.ts` | `out-of-scope` | Agent harness types are outside this package. |
-| `packages/workflow-harness/src/run-harness-agent-output.test-d.ts` | `out-of-scope` | Workflow harness output typing is outside this package. |
-
-## 2026-09-06 Diff
-
-The generated executable inventory grows from 849 to 864 files while remaining
-at 80 package/example groups. The exact path comparison returns 114 changed
-executable tests/specs: 16 added, 97 modified, and one deleted. The sorted path
-set has SHA-256
-`52cf911cf24fac460118f94e3747404bc8e38e2a3a657f69fe14f409bb552684`.
-
-| Upstream test group | Paths | Status | Swift evidence / rationale |
-| --- | ---: | --- | --- |
-| `packages/ai/**` | 16 | `ported/no-swift-action` | Core tests cover batch tool/input-file content, required tool choice, isolated in-band stream recovery, array bounds, embedding-count mismatch, image diagnostics, Files V4 results, text data URLs, abort compatibility, and UI descriptor/title/namespace/message-ID behavior. Browser transport details have no Swift runtime analogue. Invalid array bounds remain constructor-compatible but fail before model work when executed. |
-| `packages/amazon-bedrock/**` | 5 | `ported` | Structured-output modes and Claude capability splits, citation-enabled empty text, safe document names, and provider-executed tool-result replay have focused coverage. |
-| `packages/anthropic/**` | 3 | `ported/no-swift-action` | Fable/Vertex recognition and shared Files V4 result behavior are covered. JavaScript `ReadableStream` upload mechanics are represented by Swift's distinct single-use `AsyncThrowingStream` contract rather than copied. |
-| `packages/azure/**` | 1 | `ported` | Foundry/Cognitive/Azure `/v1` normalization and inherited complete Responses usage are covered. |
-| `packages/bytedance/**` | 1 | `ported` | Unsafe video-status redirects are rejected before following. |
-| `packages/deepseek/**` | 1 | `covered/no-swift-action` | Existing upload headers/abort behavior covers the portable change; OpenAI/xAI CRUD is not assigned to DeepSeek and JavaScript streaming input remains a distinct runtime boundary. |
-| `packages/google/**` | 8 | `ported` | Coverage includes Batch tools/input files and strict result keys, Files propagation, Interactions video and processing call/result generation/streaming/history, system-instruction precedence, provider references, media resolution, compaction, reasoning/signatures, code-execution naming, and array schema bounds. |
-| `packages/google-vertex/**` | 1 | `ported` | MaaS Llama 4 defaults `max_tokens` to 8192 without overwriting an explicit caller value. |
-| `packages/klingai/**` | 1 | `ported` | Unsafe video-status redirects are rejected and credentials remain origin-scoped. |
-| `packages/mcp/**` | 3 | `ported` | Typed/raw annotations with strict known-field validation, structured-only results, and origin-only issuer slash normalization are covered. |
-| `packages/minimax/**` | 1 | `ported` | Status polling uses the shared validated-redirect path. |
-| `packages/open-responses/**` | 1 | `ported` | Strict assistant-history conversion distinguishes ID-less easy input from ID-bearing completed output. |
-| `packages/openai-compatible/**` | 1 | `ported` | Empty `tool_calls` arrays no longer terminate or split an active reasoning stream. |
-| `packages/openai/**` | 8 | `ported/no-swift-action` | GPT-6 reasoning, ultrafast tier, diarized transcription, image options, complete Files V4, batch tools/input-file results, outer-envelope validation, and complete/null usage have focused coverage. JavaScript Workflow deserialization remains outside this package surface. |
-| `packages/perplexity/**` | 1 | `covered` | Existing raw usage retains new provider and cost fields without a runtime rewrite. |
-| `packages/provider-utils/**` | 4 | `ported/no-swift-action` | Tests cover inline text/base64/byte files, validated DELETE, ordered cancellation-safe multipart streaming, redacted diagnostics, and binary response streaming. Undici behavior is Node-specific. |
-| `packages/xai/**` | 2 | `ported` | Complete Files V4 and batch tools/input-file/expiry/final-finish behavior are covered. |
-| `packages/angular/**`; `packages/svelte/**` | 2 | `out-of-scope` | Framework object-error fallback state is not a provider-facing Swift surface. |
-| `packages/react/**` | 1 | `out-of-scope` | `useObject` browser error wording does not change SwiftAISDK's native session. |
-| `packages/harness*/**` | 42 | `out-of-scope` | Harness bridges, credentials, arbitrary inference headers, lifecycle callbacks, ACP host-tool transport, instruction/skill materialization, and adapter-specific sessions belong to separate agent products. |
-| `packages/policy-opa/**` | 2 | `out-of-scope` | OPA decision normalization and fail-closed approval policy belong to the separate policy runtime. |
-| `packages/workflow/**`; `packages/workflow-harness/**` | 9 | `out-of-scope` | Durable WorkflowAgent signing, callbacks, cancellation, tool context, serialization, and time-slice continuation require the unexposed JavaScript workflow product. |
-
-Coverage check: the grouped counts total exactly 114. The single deleted path
-remains represented, and no changed untracked product group is hidden by the
-provider audit.
-
-### Declaration-only changes
-
-The generator convention excludes `*.test-d.ts`, so these 11 changed paths are
-classified separately rather than added to the 114 executable count. Both
-trees still contain 90 declaration-only tests; the changed-path SHA-256 is
-`364d7352df6e01e97f89c0e10e55156174bddf4096f89a20f6b6e9f8eb3a1f9f`.
-
-| Declaration-only path | Status | Rationale |
-| --- | --- | --- |
-| `packages/ai/src/agent/tool-loop-agent.test-d.ts` | `out-of-scope` | Workflow/tool-loop agent type surface is not exposed. |
-| `packages/ai/src/batch/batch-types.test-d.ts` | `ported` | Shared Batch V4 tool content and provider metadata are reflected in public Swift types. |
-| `packages/ai/src/generate-text/generate-text.test-d.ts` | `ported` | Required tool choice, array bounds, and result shapes are represented with Swift-native typing. |
-| `packages/ai/src/generate-text/stream-text.test-d.ts` | `ported` | Raw and typed streams expose `streamRetries` through Swift overloads. |
-| `packages/ai/src/ui/ui-messages.test-d.ts` | `ported` | Approval descriptors, tool titles/metadata, and replacement IDs have typed Swift coverage. |
-| `packages/harness-acp/src/acp-harness.test-d.ts` | `out-of-scope` | ACP harness product types are untracked. |
-| `packages/harness-claude-code/src/claude-code-harness.test-d.ts` | `out-of-scope` | Claude Code harness product types are untracked. |
-| `packages/harness-cursor/src/cursor-harness.test-d.ts` | `out-of-scope` | Cursor harness product types are untracked. |
-| `packages/harness-grok-build/src/grok-build-harness.test-d.ts` | `out-of-scope` | Grok Build harness product types are untracked. |
-| `packages/harness/src/agent/harness-agent-settings.test-d.ts` | `out-of-scope` | Generic harness agent settings are outside the provider-facing library. |
-| `packages/workflow/src/workflow-agent.test-d.ts` | `out-of-scope` | Durable WorkflowAgent types are not exposed. |
-
-## 2026-08-31 Diff
-
-The generated inventory grows from 815 to 849 executable test/spec files and
-from 76 to 80 groups. The exact comparison above returns 178 changed executable
-paths: 108 in locally tracked package groups, one OpenTelemetry fixture, two
-tests for the newly discovered Z.AI provider, and 67 untracked product or
-framework paths. Declaration-only `*.test-d.ts` files remain part of the source
-and API audit but are not counted by the executable inventory.
-
-| Upstream test group | Paths | Status | Swift evidence / rationale |
-| --- | ---: | --- | --- |
-| `packages/ai/**` | 26 | `ported/no-swift-action` | Focused core regressions cover typed in-band provider errors, embedding byte-budget splitting, individual image calls, parsed structured-output diagnostics/callback values, approval reasons and revalidation, denial continuation, batch webhooks/counts, stream cancellation, and active UI stream parts. Undefined JavaScript array slots in canonical hashes and browser/framework-only chat details have no Swift value-model analogue. |
-| `packages/provider-utils/**` | 5 | `ported/covered` | Public provider-stream-error metadata and normalized batch request counts have translated core tests. Successful-response body-read `URLError` values were already classified by the shared Swift retry boundary; the remaining JavaScript response helpers do not add a distinct Swift surface. |
-| `packages/alibaba/**` | 2 | `ported` | WAN 3 all-in-one video request/metadata behavior and nonnegative reasoning-adjusted usage are covered. |
-| `packages/amazon-bedrock/**` | 8 | `ported` | Focused tests cover inference-profile reasoning, cache-only assistant omission, embedding ARN families, citations, tool parallelism, guardrail blocks, complete raw usage, reasoning shapes, and typed stream failures. |
-| `packages/anthropic/**` | 4 | `ported` | Batch option/count alignment, webhook warnings, identifier encoding, and typed stream failures are covered across direct and AWS-backed paths. |
-| `packages/azure/**`; `packages/baseten/**`; `packages/bytedance/**`; `packages/cerebras/**`; `packages/cohere/**`; `packages/deepinfra/**` | 6 | `ported/covered` | Azure DeepSeek option handling and shared embedding limits, Baseten/DeepInfra structured outputs, ByteDance last-frame metadata, Cohere raw usage, and the forward-compatible Cerebras model-ID removal are accounted for. |
-| `packages/deepseek/**` | 6 | `ported` | Message/media conversion, current thinking and sampling options, strict tools, files, log probabilities, complete usage, response metadata, model IDs, and provider stream failures have focused Swift coverage. |
-| `packages/gateway/**` | 4 | `ported` | Batch callbacks/counts, retry/error handling, model settings, and Tako Search metadata changes are covered. |
-| `packages/google/**`; `packages/google-vertex/**` | 10 | `ported/covered/deferred` | The published embedding limits are ported: 100 inputs for Google, 250 for standard Vertex models, and one for Gemini multimodal embeddings. Existing Swift behavior covers the unchanged provider foundations; Files URL recognition, recursive-tool changes, complete usage/safety/request updates, Gemini 2.5 penalty warnings, Google Batch, shared Vertex additions, and Gemini 3.5 transcription remain scoped for dedicated Google/Vertex passes. Live API WebSocket transcription also needs a provider-session adapter. |
-| `packages/groq/**`; `packages/huggingface/**` | 3 | `ported` | Groq reasoning disablement and clamped usage plus Groq/Hugging Face typed stream failures have translated fixtures. |
-| `packages/mcp/**` | 2 | `ported` | Tool pagination, OAuth scope propagation into dynamic registration, and private OAuth endpoint rejection are covered. |
-| `packages/minimax/**`; `packages/mistral/**` | 3 | `ported` | MiniMax model-aware video tiers and reference rules plus Mistral prompt-cache affinity and complete raw usage are covered. |
-| `packages/moonshotai/**` | 5 | `deferred` | The broad V1/Kimi media/message conversion, option, tool-preparation, metadata, usage, log-probability, error, and partial/predicted-output delta was audited but is intentionally deferred to a dedicated Moonshot pass. |
-| `packages/open-responses/**` | 2 | `ported/deferred` | Reasoning-summary streaming, failed/error finish normalization, and validation failures for malformed known events have focused Swift coverage. The experimental extension item/tool/event codec registry and lossless custom-event replay still need a public Swift design. |
-| `packages/openai/**` | 11 | `ported` | Batch webhook warnings/counts, embedding byte budgets, typed stream/schema failures, tool-search history, scalar cache breakpoints including collapsed parallel-result preservation, non-object tool arguments, and usage mapping are covered. |
-| `packages/openai-compatible/**` | 2 | `ported` | Array-based text/thinking content and top-level reasoning disablement are covered by the shared compatible chat path. |
-| `packages/perplexity/**`; `packages/prodia/**`; `packages/togetherai/**` | 4 | `ported` | Perplexity reasoning usage, Prodia seed warnings, and TogetherAI DeepSeek V4 Flash structured-output routing are covered. |
-| `packages/xai/**` | 5 | `ported` | `XAIResponsesBatchLanguageModel.swift` implements Responses Batch, and `ProviderGroupBUpstreamParity20260831Tests.swift` covers it alongside complete raw usage, web-search action preservation, identifier encoding, and typed stream failures. |
-| `packages/otel/**` | 1 | `covered/no-swift-action` | The legacy OpenTelemetry JavaScript fixture does not add a new contract to SwiftAISDK's typed telemetry model. |
-| `packages/zai/**` | 2 | `deferred` | Z.AI is a newly published provider and is intentionally proposal-only in this automation run; its factory, options, errors, media conversion, registry, tests, and docs need a dedicated vertical port. |
-| `packages/angular/**`; `packages/codemod/**` | 2 | `out-of-scope` | Angular UI bindings and JavaScript codemod scaffolding are not provider-facing Swift runtime surfaces. |
-| `packages/harness*/**` | 54 | `out-of-scope` | Harness agents, authentication, bridges, session/process lifecycle, skills, credential forwarding, and the new Cursor/fx adapters are separate coding-agent products. |
-| `packages/policy-opa/**`; `packages/sandbox-just-bash/**`; `packages/sandbox-vercel/**`; `packages/workflow/**`; `packages/workflow-harness/**` | 11 | `out-of-scope` | OPA policy, JavaScript sandbox networking, durable workflow/video, and harness slicing require separate product runtimes rather than provider-model ports. |
-
-Coverage check: the grouped path counts total 178 and match the executable-test
-diff exactly; the new provider and every untracked product group remain visible.
-
-## 2026-08-24 Diff
-
-The inventory grows from 804 to 815 executable test/spec files. The exact
-comparison above returns 82 changed executable test paths; declaration-only
-`*.test-d.ts` files are audited through published API/source review but are not
-counted by the inventory generator.
-
-| Upstream test group | Paths | Status | Swift evidence / rationale |
-| --- | ---: | --- | --- |
-| `packages/ai/**` | 8 | `ported/deferred` | Focused Swift regressions cover unsafe finish reasons, deferred approval stopping, preliminary output filtering, stream-object provider errors, unique text/reasoning IDs, and direct video start/status. WorkflowAgent retry reset remains deferred because SwiftAISDK has no resumable WorkflowAgent chunk runtime. |
-| `packages/amazon-bedrock/**` | 3 | `ported` | Unary Converse preserves exact content order and signature/redacted metadata; event streams surface modeled failures; empty IDs are normalized and replay is covered. |
-| `packages/bytedance/**` | 1 | `ported/covered` | Image-token usage has no local image-model surface; the complete API review also closes ByteDance async video start/status parity. |
-| `packages/cerebras/**` | 1 | `ported` | Typed provider options, `max_completion_tokens`, and empty tool-call IDs have translated tests. |
-| `packages/deepgram/**` | 3 | `ported` | Transcription defaults, voice/language construction, speed, usage headers, and provider error bodies have focused coverage. |
-| `packages/deepseek/**` | 3 | `ported` | V4 vision conversion and Files V4 upload/options/errors/default multipart naming are covered. |
-| `packages/gateway/**` | 5 | `ported` | Gateway coverage adds Batch V4 ordered result conversion with preserved server finish reasons, typed HTTP/WebSocket `not_found`, Tako Search, async video callbacks/start/status, streaming transcription, and token minting. |
-| `packages/google/**`; `packages/google-vertex/**` | 10 | `ported/deferred` | Local JSON Schema refs, boolean refs, empty IDs, interactions reasoning, and Gemini 3.7+ floors are covered on Google and inherited Vertex paths. Removed Imagen factories remain temporarily for source compatibility. |
-| `packages/mcp/**` | 2 | `ported/no-swift-action` | Non-2xx POST/SSE failures preserve status, URL, and body. Windows command shims are Node-specific. |
-| `packages/mistral/**` | 1 | `ported` | Fragmented stream tool names/arguments and empty identifiers are covered. |
-| `packages/openai/**` | 3 | `ported` | Generated, streamed, replayed, and done-only fallbacks expand internal parallel tool-call wrappers without leaking the wrapper. |
-| `packages/openai-compatible/**` | 3 | `ported` | Hosted/data video input, image usage, truncated-stream errors, and nonempty custom-namespace thought signatures are covered. |
-| `packages/provider-utils/**` | 2 | `ported` | Recursive schema-valued `additionalProperties` and shared empty-ID behavior have focused regressions. |
-| `packages/xai/**` | 1 | `ported` | Image moderation blocks map to a content-policy failure. |
-| `packages/otel/**` | 2 | `covered/no-swift-action` | Swift telemetry already retains typed request/response/provider metadata; JavaScript message-format serialization has no additional runtime contract. |
-| `packages/harness*/**`; `packages/workflow/**` | 30 | `out-of-scope` | Agent bridges, remote operations, session mirroring, network sandboxing, and Workflow runtime chunks belong to untracked products rather than provider models. |
-| `packages/rsc/**`; `packages/vue/**` | 2 | `out-of-scope` | React Server Components and Vue hook behavior are framework adapters. |
-| `packages/sandbox-just-bash/**`; `packages/sandbox-vercel/**` | 2 | `out-of-scope` | JavaScript sandbox networking/runtime behavior is not a provider-facing Swift model. |
-
-Coverage check: the grouped path counts total 82 and match the executable-test
-diff exactly; no changed package group is hidden by provider-only filtering.
-
-## 2026-08-19 Focused Follow-up
-
-The follow-up used current upstream source/tests at
-`vercel/ai@2174f202c21f86a44124a11baea8baa29f5dd0e5` plus the exact published
-Fish Audio 3.0.5 and GMI Cloud 3.0.2 tarballs. It closes previously classified
-shared/provider gaps rather than replacing the complete 140-path 2026-08-17
-inventory below.
-
-| Upstream test/source group | Status | Swift evidence / rationale |
-| --- | --- | --- |
-| `packages/ai/src/batch/**`; `packages/provider/src/batch/**`; Anthropic/OpenAI batch fixtures | `ported` | `BatchV4FacadeTests.swift` covers validation, persistable references, headers/options/idempotency, aborts, normalized status, and independent terminal result items. `AnthropicBatchV4UpstreamTests.swift` and `OpenAIResponsesBatchV4UpstreamTests.swift` translate the provider request/status/JSONL or file-result verticals. |
-| `packages/ai/src/generate-video/**`; `packages/provider/src/video-model/v4/**`; BFL/Fal operation fixtures | `ported` | `VideoGenerationOperationTests.swift` covers stable start idempotency across retry, independent status retry, metadata/warning accumulation, polling, webhook precedence/fallback/timeout/cancel, unary compatibility, provider `maxVideosPerCall`, count splitting, and ordered result merging. BFL translates FLUX 3 start/status state; Fal forwards its native webhook URL and one-video-per-call limit. |
-| `packages/ai/src/generate-text/stream-text-timeout.test.ts` | `ported` | `AIStreamTimeoutConfigurationTests.swift` covers total/per-step/first-semantic/inter-semantic deadlines, semantic chunk classification, model-step re-arming, retry backoff inside total/step budgets, step deadlines through client tool execution, provider/tool abort signals with a `TimeoutError` reason, and typed `Output` streams. |
-| `packages/anthropic/src/message-batches/**`; deferred programmatic result replay | `ported` | Anthropic batch fixtures cover beta/header merging, request warnings and validation, lifecycle counts, chunked JSONL, succeeded/failed/cancelled/expired items, and item-local parse/tool failures. The deferred server-result fixture proves replay removes the internal `programmatic-tool-call` discriminator. |
-| `packages/black-forest-labs/src/black-forest-labs-video-model*` | `ported` | The operation adapter persists request ID, trusted polling URL, unsettled cost inputs, and maps pending/ready/terminal error responses while preserving the unary call surface. |
-| `packages/cartesia/src/cartesia-transcription-model*`; duplex WebSocket helpers | `ported` | Cartesia streaming tests cover access-token creation, token-redacted URL metadata, PCM/G.711 encoding and warning rules, turn/no-turn endpoints, audio sends/finalization, partial/final/raw/error events, close metadata, and cancellation. Core duplex tests cover input lifecycle plus headers/subprotocols. |
-| `packages/xai/src/realtime/**`; provider Realtime V4 contracts | `ported` | `CoreRealtimeTests.swift` and `XAIRealtimeModelTests.swift` cover client-secret creation, subprotocol/header configuration, session config, normalized audio/text/tool events, custom event preservation, health checks, sends, aborts, cancellation, and close metadata. Non-xAI realtime adapters remain deferred. |
-| `packages/provider-utils/**` redirect/download fixtures | `ported` | `HTTPRedirectSecurityTests.swift` covers manual per-hop validation, the exact 20-header sanitizer, same-origin credential retention, cross-origin provider-credential stripping, redirect limits, and cancellation of discarded streaming bodies on followed and rejected redirects. Resolver-backed DNS answer pinning remains a separate transport-level gap. |
-| published `@ai-sdk/fish-audio@3.0.5` source and repository provider tests | `ported` | Focused Swift provider/model tests cover provider creation, binary TTS, multipart ASR, schema/options/warnings, metadata, aborts, and structured errors. |
-| published `@ai-sdk/gmicloud@3.0.2` source/tests | `ported` | GMI tests cover factory/auth/URL/UA aliases, request/stream usage, nested diagnostic errors, unknown raw usage fields, and unsupported families. |
-| `packages/amazon-bedrock/**` EventStream failures | `ported` | Bedrock stream fixtures cover decoder/processor error propagation and rejection of an incomplete frame at EOF. |
-| `packages/fireworks/**` structured output | `ported` | Fireworks request fixtures cover native JSON Schema response formatting. |
-| `packages/google/**` Gemini 3.7 thinking floor | `ported` | Google and inherited Vertex capability fixtures map `none` and `minimal` to the supported `low` floor for Gemini 3.7 Flash. |
-| `packages/openai/**` `allowedTools`, computer, and Batch V4 | `ported` | OpenAI Responses coverage resolves supported function/hosted/MCP/custom/computer entries, warns and drops unsupported allow-list entries, rejects an empty effective allow-list, keeps `computer` distinct from `computer_use`, and covers ordered actions/safety checks, streaming lifecycle, stored/unstored replay, screenshot URL/file outputs, and the batch adapter noted above. |
-| `packages/openai-compatible/**` raw usage | `covered` | Swift preserves unknown raw usage keys, including nested prompt/completion details, for generated and streamed chat/completion responses. |
-| `packages/mcp/**` 2.0.33 patch | `ported` | MCP tests cover modern discovery and fallback/error rules, typed result metadata, stateless HTTP plus bound request headers, and OAuth issuer/application-type validation. |
-| `packages/open-responses/**` provider-defined tool preparation | `covered` | At upstream 2.0.28, provider-defined tools intentionally emit an unsupported warning and are removed. Swift's warning/drop behavior is therefore parity rather than a missing provider-tool execution surface. |
-| `packages/harness-cline/**` | `out-of-scope` | The 1.0.3 auth/session/bridge/MCP/sandbox fixtures depend on the separate HarnessV1 product graph and are not provider-model tests. |
-
-## 2026-08-17 Diff
-
-The 2026-08-17 comparison returned 140 unique test/declaration paths. Changed
-snapshots and fixtures for Anthropic, Google errors, Moonshot chat/reasoning,
-Open Responses, OpenAI-compatible usage, and xAI image generation were reviewed
-with their owning test groups.
-
-| Upstream test group | Paths | Status | Swift evidence / rationale |
-| --- | ---: | --- | --- |
-| `packages/ai/**` | 9 | `ported/covered/no-swift-action` | Array-schema definitions and metadata-only chat status have focused Swift regressions. Reasoning IDs, resume isolation, cancellation, and optional reranking assignment are already covered; declaration-only and JavaScript callback/render behavior has no direct Swift action. |
-| `packages/alibaba/**` | 2 | `ported` | Assistant reasoning replay is translated into Alibaba request-conversion coverage. |
-| `packages/anthropic/**` | 2 | `ported` | Server-tool caller metadata survives multi-turn request replay in focused Anthropic tests. |
-| `packages/gateway/**` | 1 | `ported/covered` | Structured nested errors are translated; model-setting-only additions remain forward-compatible string values. |
-| `packages/google/**` | 3 | `ported` | Enum schema conversion, rich error details, and forced strict tools have focused Swift fixtures, including the changed retry-detail body. |
-| `packages/google-vertex/**` | 2 | `ported` | Vertex provider/factory coverage includes the new Chirp 3 HD Cloud TTS request and response fixtures. |
-| `packages/mcp/**` | 2 | `ported` | HTTP challenge scope and protected-resource scope precedence are translated into transport and OAuth flow tests. |
-| `packages/moonshotai/**` | 4 | `ported` | Owned-chat message conversion, options, video/file handling, reasoning fixtures, and MFJS normalization are translated. |
-| `packages/open-responses/**` | 3 | `ported` | Reasoning replay/order/annotations, native effort, warnings, and matching stream IDs have Swift request and stream coverage. |
-| `packages/openai/**` | 4 | `ported` | Compaction, previous-response continuation pairing, storage-disabled shell replay, and MCP approval reference deduplication are covered. |
-| `packages/openai-compatible/**` | 1 | `covered` | The current repository test is newer than npm `3.0.30`; Swift already preserves the complete unfiltered usage `JSONValue`, including nested provider-specific details. |
-| `packages/provider-utils/**` | 2 | `covered/no-swift-action` | The bounded Swift reader retains the size error without an error-producing JavaScript cancel promise; module import does not rely on global fetch. |
-| `packages/react/**` | 4 | `no-swift-action` | React hook input/reset/value and render-store behavior is outside SwiftAISDK's UI-session abstraction. |
-| `packages/xai/**` | 7 | `ported` | Responses image generation, priority tier, Grok 4.6 reasoning, video 1.5/reference voice/error outcomes, and timestamped speech fixtures are translated. |
-| `packages/gmicloud/**` | 3 | `deferred` | Newly discovered provider; scoped for a separate OpenAI-compatible chat port rather than auto-implemented here. |
-| `packages/vercel/**` | 1 | `no-swift-action` | The only change deletes an upstream package test; published behavior is unchanged. |
-| `packages/otel/**` | 4 | `covered/no-swift-action` | JavaScript telemetry attribute sanitization and legacy OpenTelemetry fixtures do not change SwiftAISDK's typed telemetry contract. |
-| `packages/angular/**` | 1 | `out-of-scope` | Angular Completion declaration coverage is framework-adapter behavior. |
-| `packages/svelte/**` | 1 | `out-of-scope` | Svelte Completion declarations are framework-adapter behavior. |
-| `packages/vue/**` | 1 | `out-of-scope` | Vue Completion declarations are framework-adapter behavior. |
-| `packages/code-mode/**` | 13 | `out-of-scope` | JavaScript sandbox/runtime compatibility and approval-continuation tests do not expose provider-facing Swift models. |
-| `packages/harness/**` | 9 | `out-of-scope` | Harness agent, bridge, telemetry, credential, and network-sandbox behavior belongs to the untracked coding-agent runtime. |
-| `packages/harness-acp/**` | 7 | `out-of-scope` | ACP session, environment, instruction, and stream-bridge behavior is adapter-specific. |
-| `packages/harness-claude-code/**` | 10 | `out-of-scope` | Claude Code process/auth/tool bridge behavior is not the Anthropic model API. |
-| `packages/harness-cline/**` | 9 | `out-of-scope` | Newly published Cline harness auth, session, MCP, remote-operation, and translation behavior is not a model provider. |
-| `packages/harness-codex/**` | 7 | `out-of-scope` | Codex process/auth/tool-relay bridge behavior is outside provider-facing scope. |
-| `packages/harness-deepagents/**` | 5 | `out-of-scope` | DeepAgents bridge and authentication fixtures belong to an untracked harness. |
-| `packages/harness-grok-build/**` | 2 | `out-of-scope` | Grok Build harness runtime/declarations are distinct from the xAI provider. |
-| `packages/harness-opencode/**` | 4 | `out-of-scope` | OpenCode server/auth/event bridge behavior is adapter-specific. |
-| `packages/harness-pi/**` | 7 | `out-of-scope` | Pi model/session/workspace and declaration behavior belongs to its harness adapter. |
-| `packages/sandbox-just-bash/**` | 1 | `out-of-scope` | JavaScript sandbox networking is not a SwiftAISDK provider surface. |
-| `packages/sandbox-vercel/**` | 2 | `out-of-scope` | Vercel Sandbox network policy and runtime tests are not provider models. |
-| `packages/workflow/**` | 6 | `out-of-scope` | Workflow step/iterator/agent response-format behavior belongs to the untracked JavaScript workflow package. |
-| `packages/workflow-harness/**` | 1 | `out-of-scope` | Workflow harness slicing is outside provider-facing scope. |
-
-Coverage check: package-group path counts total 140, matching the exact command
-with no unclassified test/declaration group.
-
-## 2026-08-10 Diff
-
-The 2026-08-10 comparison returned 110 changed test paths. They are grouped by
-package below; the path count in each row sums back to 110 so newly added
-untracked-product fixtures remain visible rather than disappearing behind a
-provider-only filter.
-
-| Upstream test group | Paths | Status | Swift evidence / rationale |
-| --- | ---: | --- | --- |
-| `packages/ai/**` | 16 | `ported/deferred/no-swift-action` | Default-instructions middleware, ToolLoopAgent default timeout, reconnect abort propagation, stale-run behavior and provider metadata are ported or already covered. Batch V4, generic async Video V4 and remaining typed tool-caller changes need shared public contracts; JavaScript async-iterable lock mechanics have no direct Swift analogue. |
-| `packages/alibaba/**` | 4 | `ported/covered/deferred` | Streamed tool-call identity is ported and loose usage/tool mapping is covered. The video start/status split waits on async Video V4 while the unary wire flow remains covered. |
-| `packages/amazon-bedrock/**` | 1 | `ported` | Converse conversion drops assistant turns left empty after unsigned reasoning is filtered. |
-| `packages/anthropic/**` | 7 | `ported/deferred` | Advisor token caps/stop reasons, message lifecycle protection and code-execution replay have focused Swift coverage. Messages Batch waits on the shared batch model. |
-| `packages/baseten/**` | 2 | `ported` | OpenAI-compatible HTTP embeddings/options/errors and default streamed usage are covered by Baseten tests. |
-| `packages/black-forest-labs/**` | 2 | `ported` | Provider capability and FLUX 3 video request/poll/result fixtures are translated into the unary Swift model. |
-| `packages/bytedance/**` | 1 | `covered/deferred` | Existing request/poll behavior is covered; async operation ownership remains deferred. |
-| `packages/cartesia/**` | 1 | `deferred` | The changed Ink2 encodings belong to duplex WebSocket transcription. |
-| `packages/fal/**` | 1 | `covered/deferred` | Unary queue polling is covered; webhook operations wait on async Video V4. |
-| `packages/fish-audio/**` | 4 | `deferred` | New provider discovered and scoped for follow-up; this task intentionally does not auto-port it. |
-| `packages/gateway/**` | 1 | `covered/deferred` | Unary video is covered; callback/start/status and stable logical-start idempotency wait on async Video V4. |
-| `packages/google/**` | 2 | `covered/deferred` | Unary Veo behavior is covered; the speech-translation rename still targets the missing duplex protocol. |
-| `packages/google-vertex/**` | 1 | `covered/deferred` | Existing Vertex request/poll mapping is covered; start/status APIs wait on async Video V4. |
-| `packages/klingai/**` | 1 | `covered/deferred` | Unary submit/poll parsing remains covered; public async operations are deferred. |
-| `packages/minimax/**` | 1 | `ported` | H3 text-to-video defaults/fallbacks use `16:9` while frame/reference behavior remains intact. |
-| `packages/openai-compatible/**` | 2 | `ported` | Text token usage never becomes negative and stream tool calls inherit the shared identity fix. |
-| `packages/openai/**` | 6 | `ported/deferred` | Output-schema tool results and rotating response item IDs are ported; Batch and duplex speech translation remain shared gaps, while `serviceTier: fast` already passes through. |
-| `packages/otel/**` | 2 | `covered` | Swift telemetry already carries provider metadata and resolved response model attribution in terminal model-call events. |
-| `packages/provider-utils/**` | 3 | `ported/no-swift-action` | Tracker identity/finalization is ported. Stateful JavaScript URL regex and Zod tree-shaking/schema tests do not map to Swift value types. |
-| `packages/react/**` | 1 | `no-swift-action` | The changed `useChat` cadence fixture is React subscription/render behavior. |
-| `packages/replicate/**` | 1 | `covered/deferred` | Unary polling is covered; webhook/status operations wait on async Video V4. |
-| `packages/xai/**` | 1 | `covered/deferred` | Existing create/poll behavior is covered; the operation split waits on async Video V4. |
-| `packages/code-mode/**` | 4 | `out-of-scope` | JavaScript sandbox approvals, exceptions, protocol and invocation behavior are not provider-facing Swift models. |
-| `packages/harness-acp/**` | 23 | `out-of-scope` | New ACP harness lifecycle, bridge, host-tool, permission and session behavior belongs to an untracked JavaScript agent adapter. |
-| `packages/harness-claude-code/**` | 2 | `out-of-scope` | Claude Code harness/bridge protocol behavior is not the Anthropic provider API. |
-| `packages/harness-codex/**` | 3 | `out-of-scope` | Codex harness event and bridge protocol behavior is outside the provider port. |
-| `packages/harness-deepagents/**` | 1 | `out-of-scope` | DeepAgents bridge protocol is an untracked harness adapter. |
-| `packages/harness-grok-build/**` | 2 | `out-of-scope` | The newly published Grok Build harness is not a model provider. |
-| `packages/harness-opencode/**` | 2 | `out-of-scope` | OpenCode relay authentication and bridge protocol remain harness-specific. |
-| `packages/harness/**` | 6 | `out-of-scope` | Harness errors, bootstrap, telemetry and bridge capability behavior belong to the untracked product runtime. |
-| `packages/langchain/**` | 2 | `out-of-scope` | TypeScript LangChain adapter conversions are not part of SwiftAISDK. |
-| `packages/sandbox-vercel/**` | 1 | `out-of-scope` | Vercel sandbox behavior is an untracked JavaScript sandbox package. |
-| `packages/workflow-harness/**` | 1 | `out-of-scope` | Workflow harness agent slicing is outside provider-facing scope. |
-| `packages/workflow/**` | 2 | `out-of-scope` | JavaScript workflow iterator/agent behavior has no SwiftAISDK product surface. |
-
-Coverage check: package-group path counts total 110, matching the exact upstream
-diff command with no unclassified package group.
-
-## 2026-08-03 Diff
-
-| Upstream test file(s) | Status | Swift evidence / rationale |
-| --- | --- | --- |
-| `packages/fireworks/src/fireworks-provider.test.ts` | `ported` | Fireworks chat, completion, and embedding now accept both legacy string errors and the actual nested object envelope, preserving the provider's `error.message` in `AIAPICallError`; focused Swift coverage exercises both shapes while image errors retain generic body handling. |
-| `packages/minimax/src/minimax-provider.test.ts`; `packages/minimax/src/minimax-video-model.test.ts` | `ported` | The provider now exposes MiniMax-H3 video generation alongside the existing Anthropic-compatible language factory. Focused Swift tests cover provider aliases/capabilities, text-to-video, first/last-frame and reference inputs, request options, polling, result download metadata, warnings, errors, and abort behavior. |
-| `packages/provider-utils/src/create-null-language-model-usage.test.ts` | `covered` | Swift represents unavailable usage with optional `TokenUsage` fields rather than a JavaScript object whose every nested token field is `undefined`; existing absent-usage generate and stream fixtures prove the equivalent public result. |
-| `packages/harness-claude-code/src/claude-code-harness.test.ts`; `packages/harness-codex/src/codex-harness.test.ts`; `packages/harness-deepagents/src/deepagents-harness.test.ts`; `packages/harness-opencode/src/bridge/create-emit-stream-event.test.ts`; `packages/harness-opencode/src/bridge/opencode-events.test.ts`; `packages/harness-opencode/src/bridge/opencode-usage.test.ts`; `packages/harness-opencode/src/opencode-harness.test.ts`; `packages/harness/src/agent/harness-agent.test.ts`; `packages/harness/src/agent/internal/bootstrap-recipe.test.ts`; `packages/harness/src/agent/internal/sandbox-bootstrap.test.ts`; `packages/harness/src/agent/prepare-sandbox-for-harness.test.ts` | `out-of-scope` | These changes cover untracked JavaScript coding-harness adapters, bridge events, bootstrap recipes, sandbox setup, and usage accounting rather than provider-facing Swift model behavior. |
-
-Coverage check: the upstream command returns 15 paths, and the table references
-15 unique paths with no missing, extra, or duplicate entries.
-
-## 2026-08-01 Diff
-
-| Upstream test file(s) | Status | Swift evidence / rationale |
-| --- | --- | --- |
-| `packages/ai/src/generate-text/generate-text.test.ts`; `packages/ai/src/generate-text/stream-language-model-call.test.ts`; `packages/ai/src/generate-text/stream-text.test.ts`; `packages/otel/src/open-telemetry.test.ts` | `ported` | Generate and stream paths now ignore provider-executed tool calls for client execution/results, retain metadata-bearing empty text deltas, and report the response model id in terminal telemetry. Focused Swift tests cover each changed result and event shape. |
-| `packages/ai/src/agent/tool-loop-agent.test-d.ts`; `packages/ai/src/agent/tool-loop-agent.test.ts`; `packages/ai/src/generate-text/generate-text.test-d.ts`; `packages/ai/src/generate-text/stream-text.test-d.ts` | `deferred` | The new local/provider `experimental_toolCallers` graph changes public tool typing, binding, visibility, and provider-option preparation. SwiftAISDK has no equivalent caller abstraction yet, so a faithful port needs a coordinated core API design. |
-| `packages/ai/src/generate-text/stream-text-timeout.test.ts` | `ported` | The changed fixture only adds provider metadata to an empty text delta in the existing first-chunk-timeout case. Swift now forwards that metadata-bearing empty delta and merges its metadata into the completed text content, covered by the focused stream/output regressions above. |
-| `packages/ai/src/generate-object/generate-object.test.ts`; `packages/ai/src/generate-object/stream-object.test.ts` | `covered` | The upstream change promotes `repairText` while retaining the experimental alias. Swift's existing object-repair callback is already stable rather than experimental and preserves the same repair precedence behavior. |
-| `packages/ai/src/generate-text/generated-file.test-d.ts` | `covered` | Swift generated-file output is already a typed `GeneratedFile` value rather than a TypeScript structural type, so the new declaration-only branding regression requires no runtime change. |
-| `packages/ai/src/logger/log-warnings.test.ts` | `no-swift-action` | This changes Node-specific `process.emitWarning` versus `console.warn` routing. SwiftAISDK returns typed warnings to callers and has no Node logger surface. |
-| `packages/ai/src/translate/stream-translate.test.ts` | `deferred` | Streaming speech translation is a new core/provider protocol surface. It should be introduced together with provider translation models rather than as an orphan facade. |
-| `packages/amazon-bedrock/src/amazon-bedrock-chat-language-model.test.ts`; `packages/amazon-bedrock/src/amazon-bedrock-prepare-tools.test.ts`; `packages/amazon-bedrock/src/convert-to-amazon-bedrock-chat-messages.test.ts` | `ported` | Bedrock now maps all ten video MIME types to formats, accepts inline/file and tool-result S3 media, emits strict unsupported-input warnings, keeps ordinary tools beside JSON structured output, and extracts balanced JSON in generate and stream parsing. |
-| `packages/anthropic/src/anthropic-language-model.test.ts` | `deferred` | The changed regression is part of the generic tool-caller/provider-caller surface. Existing Anthropic behavior remains covered; caller linkage waits on the shared core design above. |
-| `packages/azure/src/azure-openai-tools.test-d.ts`; `packages/openai/src/responses/openai-responses-language-model.test.ts`; `packages/openai/src/responses/openai-responses-prepare-tools.test.ts` | `ported` | OpenAI and Azure Responses web-search options now encode `blockedDomains` as `blocked_domains`, with focused request-builder coverage. |
-| `packages/code-mode/src/core.test.ts`; `packages/code-mode/src/e2e/code-mode-haiku.e2e.test.ts`; `packages/code-mode/src/exceptions.test.ts`; `packages/code-mode/src/runtime/async-context.test.ts`; `packages/code-mode/src/runtime/bridge-lifecycle.test.ts`; `packages/code-mode/src/runtime/bundled-runtime.test.ts`; `packages/code-mode/src/runtime/console.test.ts`; `packages/code-mode/src/runtime/max-workers.test.ts`; `packages/code-mode/src/runtime/protocol.test.ts`; `packages/code-mode/src/runtime/security.test.ts`; `packages/code-mode/src/runtime/timeouts.test.ts`; `packages/code-mode/src/runtime/tool-concurrency.test.ts`; `packages/code-mode/src/runtime/worker-concurrency.test.ts`; `packages/code-mode/src/tool-invocation.test.ts`; `packages/code-mode/src/tool-prompt.test.ts`; `packages/code-mode/src/utils/options.test.ts`; `packages/code-mode/src/utils/source-cache.test.ts` | `out-of-scope` | `@ai-sdk/code-mode` is a new JavaScript sandbox/worker product package, not a provider-facing model package. It is reported by registry discovery but is not auto-ported in this provider update. |
-| `packages/devtools/src/integration.test.ts`; `packages/devtools/src/middleware.test.ts`; `packages/devtools/src/serialize.test.ts`; `packages/devtools/src/viewer/client/media-components.test.ts`; `packages/devtools/src/viewer/client/media.test.ts`; `packages/devtools/tests/e2e/theme.e2e.test.ts` | `out-of-scope` | Devtools middleware, serialization, media rendering, and browser-theme behavior belong to the untracked web viewer product. |
-| `packages/elevenlabs/src/elevenlabs-transcription-model.test.ts` | `deferred` | The changed behavior is ElevenLabs realtime transcription over WebSocket. SwiftAISDK currently exposes batch transcription only; this belongs with a shared realtime transport API. |
-| `packages/google/src/google-files.test.ts`; `packages/google/src/interactions/google-interactions-language-model.test.ts` | `ported` | Google Files no longer forces a payload `Content-Length`, while Interactions forwards `topK` and `seed` and returns complete unsupported-setting/agent warnings. |
-| `packages/google/src/translation/google-translation-model.test.ts` | `deferred` | Google streaming translation is deferred with the shared translation protocol above. |
-| `packages/groq/src/groq-transcription-model.test.ts` | `ported` | Groq transcription accepts raw `text` responses and falls back to word-level segments when verbose responses omit aggregate segments. |
-| `packages/harness/src/agent/internal/run-prompt.test.ts`; `packages/workflow-harness/src/run-harness-agent-slice.test.ts`; `packages/langchain/src/utils.test.ts`; `packages/workflow/src/serializable-schema.test.ts`; `packages/workflow/src/stream-text-iterator.test.ts`; `packages/workflow/src/workflow-agent.test-d.ts`; `packages/workflow/src/workflow-agent.test.ts` | `out-of-scope` | These paths exercise untracked JavaScript harness, LangChain, and workflow runtime contracts rather than SwiftAISDK's provider-facing APIs. |
-| `packages/klingai/src/klingai-auth.test.ts`; `packages/klingai/src/klingai-provider.test.ts` | `ported` | Public Kling settings now support API-key and legacy access/secret credentials with deterministic precedence, while an explicit Authorization header still overrides generated auth. |
-| `packages/mcp/src/tool/mcp-client.test.ts`; `packages/mcp/src/tool/mcp-http-transport.test.ts`; `packages/mcp/src/tool/mcp-sse-transport.test.ts` | `ported` | MCP initialization and request calls now support individual and total timeout budgets, use the effective minimum deadline, map cancellation consistently, and clean pending request state. Swift transport construction preserves these settings across HTTP/SSE clients. |
-| `packages/minimax/src/minimax-provider.test.ts`; `packages/minimax/src/minimax-reasoning.test.ts` | `ported` | `MiniMaxProviderTests.swift` translates the published provider/auth/alias/unsupported-family contract and the exact adaptive-thinking fixture, including ordered reasoning/text output. Additional focused coverage proves custom header precedence, empty URL capabilities, signature metadata, usage/response metadata, and the shared Anthropic stream lifecycle. The Swift baseline is current `@ai-sdk/minimax@3.0.1`; its provider source is byte-identical to the originally audited `3.0.0`. |
-| `packages/mistral/src/convert-to-mistral-chat-messages.test.ts`; `packages/mistral/src/mistral-transcription-model.test-d.ts`; `packages/mistral/src/mistral-transcription-model.test.ts` | `ported` | Mistral message conversion preserves assistant reasoning as typed thinking blocks, and the new Voxtral transcription model covers multipart input, options/validation, segment parsing, and rich response metadata. |
-| `packages/openai/src/files/openai-files.test.ts` | `ported` | OpenAI file upload expiry now uses the accepted nested multipart fields `expires_after[anchor]` and `expires_after[seconds]`, with provider-option validation and request-metadata coverage in `FileAndSkillClientTests.swift`. |
-| `packages/openai/src/openai-stream-error.test.ts`; `packages/openai/src/tool/web-search.test-d.ts`; `packages/openai/src/translation/openai-translation-model.test.ts` | `deferred` | Generic stream-error recovery, typed web-search caller linkage, and realtime translation need the shared streaming/tool-caller/translation designs. Existing web-search behavior remains covered. |
-| `packages/perplexity/src/perplexity-embedding-model.test.ts` | `ported` | Perplexity embeddings now expose typed dimensions/encoding options, enforce the 512-input limit, decode signed/base64 binary vectors, and return token plus cost metadata. |
-| `packages/provider-utils/src/connect-to-websocket.test.ts`; `packages/provider-utils/src/safe-node-fetch.test.ts` | `deferred` | WebSocket close metadata belongs with the missing realtime transport surface. DNS-result pinning for downloads needs a URLSession-level resolver/connection design; URL allowlisting alone cannot faithfully reproduce the Node connector guarantee. |
-| `packages/provider-utils/src/is-record.test.ts`; `packages/provider-utils/src/serialize-model-options.test.ts` | `no-swift-action` | JavaScript cross-realm record detection and async-option serialization error branding do not map to Swift's static value types. |
-| `packages/togetherai/src/togetherai-provider.test.ts` | `ported` | Together chat and completion request builders now append `includeUsage=true`, with request URL coverage. |
-| `packages/xai/src/responses/xai-responses-language-model.test.ts`; `packages/xai/src/xai-video-model.test.ts` | `ported` | xAI Responses emits the new unsupported-setting warnings; video polling tolerates repeated `202` responses and carries the latest request state until completion. |
-
-Coverage check: the upstream command returns 78 paths, and the table references
-78 unique paths with no missing, extra, or duplicate entries.
-
-## 2026-07-27 Diff
-
-| Upstream test file(s) | Status | Swift evidence / rationale |
-| --- | --- | --- |
-| `packages/ai/src/generate-text/tool-approval-signature.test.ts` | `ported` | `ToolPreparation.swift` now uses the versioned injective JSON-array HMAC payload, ECMAScript number/string serialization and UTF-16 key ordering, verifies safe legacy signatures, and closes newline/control-character retupling. `AiToolApprovalSignatureUpstreamTests.swift` carries Node-fixed interoperability vectors plus the upstream collision and compatibility regressions. |
-| `packages/ai/src/prompt/convert-to-language-model-prompt.test.ts` | `ported` | `PromptConversion.swift` deep-merges message-level provider metadata into the preceding tool content part at each combined-message boundary. `AiConvertToLanguageModelPromptUpstreamTests.swift` proves part values override message values and later message metadata remains top-level. |
-| `packages/ai/src/transcribe/transcribe.test.ts`; `packages/provider-utils/src/detect-media-type.test.ts` | `ported` | `MediaType.swift` recognizes ISO-BMFF `ftyp` audio in an audio context, keeps generic MP4 detection as video, and bounds raw/base64 ID3 scanning through the upstream 128 KiB edge. `MediaTypeTests.swift` covers both representations and the exact limit. |
-| `packages/ai/src/generate-text/stream-text-timeout.test.ts`; `packages/ai/src/generate-text/stream-text.test-d.ts`; `packages/ai/src/prompt/prepare-language-model-call-options.test.ts`; `packages/ai/src/util/create-stitchable-stream.test.ts` | `deferred` | The new `firstChunkMs` timeout, semantic-content-only `chunkMs` reset, per-step re-arming, and error/cancellation timer cleanup need one structured Swift timeout API. Current Swift only exposes total `timeoutNanoseconds`; a narrow internal timer patch would not provide faithful public parity. |
-| `packages/ai/src/ui-message-stream/read-ui-message-stream.test.ts` | `deferred` | The regression scopes repeated tool-call ids to the current model step and searches older steps only for late outputs. Swift's reducer has a global id index and `LanguageStreamPart` has no explicit step markers, so this needs a coordinated stream-enum/reducer change. |
-| `packages/ai/src/text-stream/pipe-text-stream-to-response.test.ts`; `packages/ai/src/util/write-to-server-response.test.ts` | `out-of-scope` | These tests require Node `ServerResponse` helpers to return promises and reject on stream read/write errors. SwiftAISDK has no Node response-piping surface; `AsyncThrowingStream` errors already reach Swift consumers through iteration. |
-| `packages/amazon-bedrock/src/amazon-bedrock-chat-language-model.test.ts`; `packages/amazon-bedrock/src/amazon-bedrock-prepare-tools.test.ts`; `packages/amazon-bedrock/src/anthropic/amazon-bedrock-anthropic-provider.test.ts`; `packages/amazon-bedrock/src/convert-to-amazon-bedrock-chat-messages.test.ts` | `ported` | `AmazonBedrockLanguageModel.swift`, `AmazonBedrockShared.swift`, and the shared Anthropic adapter now encode slash-containing ARN model ids, preserve supported exact case-sensitive `s3://` image sources in messages and tool results, sanitize replayed tool names, sanitize native-output schemas, and omit strict/native structured-output fields for Claude families Bedrock rejects. `AmazonBedrockTests.swift` carries focused ARN, S3, malformed-S3, tool-name, schema, and capability regressions. |
-| `packages/anthropic/src/anthropic-language-model.test.ts`; `packages/anthropic/src/anthropic-unknown-model-max-output-tokens.test.ts`; `packages/anthropic/src/convert-to-anthropic-prompt.test.ts` | `ported` | The provider changes are covered by `AnthropicModels.swift`, `AnthropicOptions.swift`, and `AnthropicParsing.swift`: Claude Opus 5 and unknown-Claude capability defaults, conservative legacy/non-Claude handling, default-token warnings, `fallbacks: default`, disabled-thinking effort limits, JSON-tool parallel warnings, and thinking-token usage. Mid-conversation `toolChanges` in `AIMessage.providerMetadata` produce mapped tool-addition/removal blocks and both required beta headers; toolChanges-only messages omit empty text without consuming a cache breakpoint, while initial-system changes warn and are ignored. Focused Anthropic parity tests cover these paths. |
-| `packages/gateway/src/gateway-language-model.test.ts` | `covered` | The only test change deletes the retired `hipaaCompliant` option cases. Swift has no typed HIPAA option to remove, remaining Gateway provider options continue through the existing JSON pass-through tests, and the stale compliance wording was removed from generated provider docs. |
-| `packages/google/src/convert-to-google-messages.test.ts`; `packages/google/src/google-language-model.test.ts`; `packages/google/src/google-model-capabilities.test.ts`; `packages/google/src/google-prepare-tools.test.ts` | `ported` | `GoogleModelCapabilities.swift` and the GenerateContent request/parsing paths now default unknown future Gemini ids to newest supported behavior while retaining known legacy boundaries, preserve valid unsigned parallel calls after a signed standard call, surface `responseId` once, associate repeated code-execution results with their call, and apply provider-specific standard function-id handling. The focused Google and Vertex tests mirror these changed fixtures. |
-| `packages/google/src/realtime/google-realtime-event-mapper.test.ts` | `out-of-scope` | The new `goAway`, `sessionResumptionUpdate`, and distinct `generationComplete` lifecycle events belong to the Google Live WebSocket protocol. SwiftAISDK currently has no realtime/WebSocket model surface, so mapping these JS realtime events would create an orphan API. |
-| `packages/openai/src/image/openai-image-model.test.ts`; `packages/openai/src/openai-forward-compatible-defaults.test.ts`; `packages/openai/src/openai-language-model-capabilities.test.ts`; `packages/openai/src/responses/convert-to-openai-responses-input-tool-search.test.ts`; `packages/openai/src/responses/convert-to-openai-responses-input.test.ts`; `packages/openai/src/responses/openai-responses-language-model.test.ts`; `packages/openai/src/responses/openai-responses-prepare-tools.test.ts`; `packages/openai/src/tool/programmatic-tool-calling.test-d.ts` | `ported` | The OpenAI-compatible Chat/Responses/image changes add forward-compatible GPT reasoning and image-family defaults, preserve stored tool-search ids, and support programmatic tool definitions, caller linkage, output schemas, generated/streamed program items, forced tool choice, and multi-step continuation. Chat reasoning requests now omit every unsupported sampling/penalty field, surface matching generate/stream warnings, and always remove `topLogprobs`, including GPT-5.1+ effort `none`. `OpenAIProgrammaticAndForwardCompatibilityTests.swift`, `OpenAIChatTests.swift`, and updated OpenAI-compatible tests cover the changed request, parse, warning, and stream shapes. |
-| `packages/devtools/src/viewer/client/theme.test.ts`; `packages/devtools/tests/e2e/theme.e2e.test.ts` | `out-of-scope` | These are browser viewer theme persistence and end-to-end DOM tests for the untracked `@ai-sdk/devtools` web application. They do not exercise a provider-facing Swift runtime contract. |
-| `packages/harness/src/agent/harness-agent-settings.test-d.ts`; `packages/harness/src/agent/harness-agent-tool-result-continuation.test.ts`; `packages/harness/src/agent/harness-agent.test.ts`; `packages/harness/src/agent/internal/run-prompt.test.ts`; `packages/harness/src/agent/internal/turn-telemetry.test.ts`; `packages/harness/src/agent/internal/validate-tool-call.test.ts`; `packages/harness/src/agent/telemetry-integration.test.ts`; `packages/harness/src/bridge/index.test.ts`; `packages/harness/src/utils/sandbox-channel.test.ts` | `out-of-scope` | `@ai-sdk/harness` is an untracked JavaScript coding-agent runtime with its own bridge, sandbox channel, telemetry, and continuation protocol. SwiftAISDK's `AIAgent` surface does not expose this harness product contract. |
-| `packages/harness-claude-code/src/bridge/create-emit-stream-event.test.ts`; `packages/harness-claude-code/src/bridge/json-schema-to-zod.test.ts`; `packages/harness-claude-code/src/claude-code-bridge-protocol.test.ts`; `packages/harness-claude-code/src/claude-code-harness.test.ts` | `out-of-scope` | Claude Code bridge framing, Zod conversion, process protocol, and harness lifecycle belong to the untracked JavaScript harness adapter rather than the Anthropic provider implementation. |
-| `packages/harness-codex/src/bridge/create-emit-stream-event.test.ts`; `packages/harness-codex/src/bridge/index.test.ts`; `packages/harness-codex/src/codex-bridge-protocol.test.ts`; `packages/harness-codex/src/codex-harness.test.ts`; `packages/harness-codex/src/codex-instructions.test.ts` | `out-of-scope` | These tests cover the untracked Codex CLI harness bridge, child-process protocol, event translation, and instruction discovery; none maps to SwiftAISDK's provider-facing APIs. |
-| `packages/harness-deepagents/src/bridge/create-emit-stream-event.test.ts`; `packages/harness-deepagents/src/bridge/tool-filtering.test.ts`; `packages/harness-deepagents/src/deepagents-bridge-protocol.test.ts` | `out-of-scope` | DeepAgents bridge events and tool filtering are adapter-specific JavaScript harness behavior, not a tracked Swift provider or core surface. |
-| `packages/harness-opencode/src/bridge/create-emit-stream-event.test.ts`; `packages/harness-opencode/src/bridge/opencode-events.test.ts`; `packages/harness-opencode/src/opencode-bridge-protocol.test.ts` | `out-of-scope` | OpenCode event translation and bridge framing are untracked coding-harness process behavior with no SwiftAISDK protocol counterpart. |
-| `packages/harness-pi/src/pi-auth.test.ts`; `packages/harness-pi/src/pi-model-resolver.test.ts`; `packages/harness-pi/src/pi-session.test.ts` | `out-of-scope` | Pi credential loading, model resolution, and session integration belong to the untracked JavaScript harness adapter and do not alter provider-facing Swift behavior. |
-| `packages/langchain/src/adapter.test.ts`; `packages/langchain/src/utils.test.ts` | `no-swift-action` | The changes exercise the untracked TypeScript LangChain stream adapter and JavaScript utility conversions. SwiftAISDK has no LangChain JS object model or event stream to translate. |
-| `packages/workflow/src/stream-text-iterator.test.ts` | `no-swift-action` | This test covers iterator behavior inside the untracked JavaScript workflow package. Swift async-sequence streaming is independent of the workflow serialization/runtime contract. |
-
-Coverage check: the upstream command returns 64 paths, and the table references
-64 unique paths with no missing, extra, or duplicate entries.
-
-The baseline ref already contains the `generateText` abort-during-tool regression
-and loose known UI-chunk compatibility tests, so those files do not appear in
-this ref-to-ref list. The abort behavior was nevertheless ported for the npm
-`ai@7.0.31 -> 7.0.37` audit; the Zod wire-schema change has no direct typed
-Swift decoder surface. No `@ai-sdk/react` test file changed in this diff.
+| Change | Upstream path | Decision | Swift evidence / boundary |
+| --- | --- | --- | --- |
+| `A` | `packages/ai/src/telemetry/speech-telemetry.test-d.ts` | `ported` | WeeklyImageAndCore/WeeklyCoreAudioMCP regressions cover the native image, tool-search, audio, metadata or agent conversion behavior; declaration tests are reviewed separately. |
+| `M` | `packages/ai/src/tool-search/tool-search.test-d.ts` | `ported` | WeeklyImageAndCore/WeeklyCoreAudioMCP regressions cover the native image, tool-search, audio, metadata or agent conversion behavior; declaration tests are reviewed separately. |
+| `A` | `packages/ai/src/types/image-model.test-d.ts` | `ported` | WeeklyImageAndCore/WeeklyCoreAudioMCP regressions cover the native image, tool-search, audio, metadata or agent conversion behavior; declaration tests are reviewed separately. |
+| `M` | `packages/ai/src/ui/ui-messages.test-d.ts` | `partial` | Native partial text/tool-input seeding and superseded approvals are tested; browser rawInput wire-state/HTTP resume/explicit step identity remain deferred. |
+| `M` | `packages/gateway/src/gateway-provider-options.test-d.ts` | `ported` | Published provider behavior translated in WeeklyProviders/WeeklyAzureAudio/WeeklyImageAndCore tests plus affected existing provider suites. |
+| `M` | `packages/harness/src/agent/harness-agent-settings.test-d.ts` | `out-of-scope` | Framework/harness/workflow/tooling or React surface absent from this Swift provider package. |
+| `A` | `packages/harness/src/v1/harness-v1-message.test-d.ts` | `out-of-scope` | Framework/harness/workflow/tooling or React surface absent from this Swift provider package. |
+| `A` | `packages/mcp/src/index.test-d.ts` | `ported` | Published provider behavior translated in WeeklyProviders/WeeklyAzureAudio/WeeklyImageAndCore tests plus affected existing provider suites. |
+| `M` | `packages/open-responses/src/open-responses-extension.test-d.ts` | `deferred` | Bare extension codec registry and registration/type-collision tests need the existing missing native registry. |

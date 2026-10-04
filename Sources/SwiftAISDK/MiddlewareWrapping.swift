@@ -220,6 +220,20 @@ final class AIWrappedImageModel: ImageModel, @unchecked Sendable {
     let providerID: String
     let modelID: String
 
+    var supportsFileInputs: Bool? {
+        get async {
+            if let override = middleware.overrideSupportsFileInputs { return await override(model) }
+            return await model.supportsFileInputs
+        }
+    }
+
+    var supportsMaskInputs: Bool? {
+        get async {
+            if let override = middleware.overrideSupportsMaskInputs { return await override(model) }
+            return await model.supportsMaskInputs
+        }
+    }
+
     init(
         model: any ImageModel,
         middleware: AIImageModelMiddleware,

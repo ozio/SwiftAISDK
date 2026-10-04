@@ -554,6 +554,7 @@ func transcriptionTelemetryOutput(_ result: TranscriptionResult) -> JSONValue {
         "language": result.language.map(JSONValue.string),
         "durationInSeconds": result.durationInSeconds.map(JSONValue.number),
         "segmentCount": .number(Double(result.segments.count)),
+        "usage": result.usage.map(JSONValue.object),
         "requestMetadata": aiRequestMetadataJSON(result.requestMetadata),
         "rawValue": result.rawValue
     ])
@@ -563,6 +564,7 @@ func speechTelemetryOutput(_ result: SpeechResult) -> JSONValue {
     .object([
         "byteLength": .number(Double(result.audio.count)),
         "contentType": result.contentType.map(JSONValue.string),
+        "usage": result.usage.map(JSONValue.object),
         "requestMetadata": aiRequestMetadataJSON(result.requestMetadata)
     ])
 }

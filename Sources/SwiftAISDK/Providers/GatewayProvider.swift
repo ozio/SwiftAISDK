@@ -252,7 +252,7 @@ public final class GatewayProvider: AIProvider, AIEvaluationProvider, @unchecked
         if normalizedHeaders["ai-gateway-auth-method"] == nil {
             settings.headers["ai-gateway-auth-method"] = auth.method
         }
-        let headers = withUserAgentSuffix(settings.headers, "ai-sdk/gateway/4.0.95")
+        let headers = withUserAgentSuffix(settings.headers, "ai-sdk-gateway/4.0.103")
         config = ModelHTTPConfig(
             providerID: providerID,
             baseURL: settings.baseURL ?? "https://ai-gateway.vercel.sh/v4/ai",
@@ -364,7 +364,12 @@ public final class GatewayProvider: AIProvider, AIEvaluationProvider, @unchecked
     }
 
     public func credits() async throws -> GatewayCredits {
-        let response = try await config.transport.send(AIHTTPRequest(method: "GET", url: try gatewayOriginURL(baseURL: config.baseURL, path: "/v1/credits"), headers: config.headers))
+        let originURL = try gatewayOriginURL(baseURL: config.baseURL, path: "/v1/credits")
+        var components = URLComponents(url: originURL, resolvingAgainstBaseURL: false)!
+        if let team = config.headers.first(where: { $0.key.lowercased() == "x-vercel-ai-gateway-team" })?.value.trimmingCharacters(in: .whitespacesAndNewlines), !team.isEmpty {
+            components.queryItems = [URLQueryItem(name: team.hasPrefix("team_") ? "teamId" : "slug", value: team)]
+        }
+        let response = try await config.transport.send(AIHTTPRequest(method: "GET", url: components.url ?? originURL, headers: config.headers))
         guard (200..<300).contains(response.statusCode) else {
             throw apiCallError(provider: providerID, response: response)
         }

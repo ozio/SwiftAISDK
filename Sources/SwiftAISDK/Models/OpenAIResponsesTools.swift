@@ -378,7 +378,7 @@ func normalizeOpenAIJSONSchema(_ schema: JSONValue) throws -> (schema: JSONValue
         return .object(try object.mapValues(normalizeDefinition))
     }
 
-    func normalizeSchema(_ value: JSONValue) throws -> JSONValue {
+    func normalizeSchema(_ value: JSONValue, isRoot: Bool = false) throws -> JSONValue {
         guard var object = value.objectValue else { return value }
         if let propertyNames = object["propertyNames"] {
             guard propertyNames.boolValue == nil,
@@ -419,10 +419,28 @@ func normalizeOpenAIJSONSchema(_ schema: JSONValue) throws -> (schema: JSONValue
             }
             object["dependencies"] = .object(dependencies)
         }
+        if let allOf = object["allOf"]?.arrayValue, allOf.count == 1,
+           let referenceObject = allOf[0].objectValue, referenceObject.count == 1,
+           let reference = referenceObject["$ref"]?.stringValue {
+            if !isRoot {
+                object.removeValue(forKey: "allOf")
+                object["$ref"] = .string(reference)
+            } else {
+                let parts = reference.split(separator: "/", omittingEmptySubsequences: false)
+                if parts.count == 3, parts[0] == "#", ["definitions", "$defs"].contains(String(parts[1])) {
+                    let name = String(parts[2]).replacingOccurrences(of: "~1", with: "/").replacingOccurrences(of: "~0", with: "~")
+                    if var definition = object[String(parts[1])]?[name]?.objectValue {
+                        object.removeValue(forKey: "allOf")
+                        definition.merge(object) { _, annotation in annotation }
+                        object = definition
+                    }
+                }
+            }
+        }
         return .object(object)
     }
 
-    let normalized = try normalizeSchema(schema)
+    let normalized = try normalizeSchema(schema, isRoot: true)
     var warnings: [AIWarning] = []
     if removedPropertyNames {
         warnings.append(AIWarning(

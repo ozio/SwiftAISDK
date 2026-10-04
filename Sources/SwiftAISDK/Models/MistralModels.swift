@@ -135,7 +135,7 @@ public final class MistralLanguageModel: LanguageModel, @unchecked Sendable {
         var options = try mistralProviderOptions(from: request)
         let responseFormat = mistralResolvedResponseFormat(request: request, options: &options)
         var warnings = mistralWarnings(for: request, modelID: modelID)
-        let messages = mistralMessages(request.messages, responseFormat: responseFormat)
+        let messages = mistralMessages(request.messages, responseFormat: responseFormat, structuredOutputs: options["structuredOutputs"]?.boolValue ?? true)
         var body: [String: JSONValue] = [
             "model": .string(modelID),
             "messages": .array(try mistralMessagesJSON(messages))

@@ -13,6 +13,8 @@ public func getErrorMessage(_ value: Any?) -> String {
 }
 
 public struct AIAPICallError: Error, Equatable, CustomStringConvertible, Sendable {
+    /// A provider's explanatory message, while responseBody retains the wire body.
+    public var message: String? = nil
     public var provider: String
     public var url: String?
     public var requestBody: JSONValue?
@@ -40,7 +42,7 @@ public struct AIAPICallError: Error, Equatable, CustomStringConvertible, Sendabl
     }
 
     public var description: String {
-        "\(provider) request failed with HTTP \(statusCode): \(responseBody)"
+        "\(provider) request failed with HTTP \(statusCode): \(message ?? responseBody)"
     }
 
     private static func defaultRetryableStatus(_ statusCode: Int) -> Bool {

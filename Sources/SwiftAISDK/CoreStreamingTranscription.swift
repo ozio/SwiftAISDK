@@ -1,5 +1,24 @@
 import Foundation
 
+/// Pulls only when the provider requests the next chunk. Iterators are consumed
+/// serially, as required by AsyncSequence; the lock makes captured storage Sendable.
+private final class AIObservedAudioIterator: @unchecked Sendable {
+    private let lock = NSLock()
+    private var iterator: AsyncThrowingStream<Data, Error>.Iterator?
+    private let observer: @Sendable (Data) -> Void
+    init(_ iterator: AsyncThrowingStream<Data, Error>.Iterator, observer: @escaping @Sendable (Data) -> Void) {
+        self.iterator = iterator
+        self.observer = observer
+    }
+    func next() async throws -> Data? {
+        guard var current = lock.withLock({ let current = iterator; iterator = nil; return current }) else { return nil }
+        defer { lock.withLock { iterator = current } }
+        let chunk = try await current.next()
+        if let chunk { observer(chunk) }
+        return chunk
+    }
+}
+
 /// The raw audio format supplied to a streaming transcription model.
 public struct AIStreamingAudioFormat: Equatable, Hashable, Sendable {
     public var mediaType: String
@@ -112,6 +131,11 @@ public struct AIStreamingAudioInput: AsyncSequence, Sendable {
         stream.makeAsyncIterator()
     }
 
+    func observingChunks(_ observer: @escaping @Sendable (Data) -> Void) -> AIStreamingAudioInput {
+        let iterator = AIObservedAudioIterator(stream.makeAsyncIterator(), observer: observer)
+        return AIStreamingAudioInput(AsyncThrowingStream(unfolding: { try await iterator.next() }), onConsumerCancel: onConsumerCancel)
+    }
+
     /// Creates an unbounded audio pipe suitable for microphones and other
     /// incremental audio producers.
     public static func makeStream()
@@ -165,6 +189,7 @@ public struct StreamingTranscriptionRequest: Sendable {
 }
 
 public struct StreamingTranscriptionFinish: Equatable, Sendable {
+    public var usage: [String: JSONValue]? = nil
     public var text: String
     public var segments: [TranscriptionSegment]
     public var language: String?
@@ -186,6 +211,19 @@ public struct StreamingTranscriptionFinish: Equatable, Sendable {
         self.durationInSeconds = durationInSeconds
         self.providerMetadata = providerMetadata
         self.closeMetadata = closeMetadata
+    }
+
+    public init(
+        text: String,
+        segments: [TranscriptionSegment] = [],
+        language: String? = nil,
+        durationInSeconds: Double? = nil,
+        providerMetadata: [String: JSONValue] = [:],
+        closeMetadata: AIDuplexWebSocketCloseMetadata? = nil,
+        usage: [String: JSONValue]?
+    ) {
+        self.init(text: text, segments: segments, language: language, durationInSeconds: durationInSeconds, providerMetadata: providerMetadata, closeMetadata: closeMetadata)
+        self.usage = usage
     }
 }
 

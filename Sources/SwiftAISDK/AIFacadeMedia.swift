@@ -240,7 +240,8 @@ extension AI {
             usage: { _ in nil },
             warnings: { $0.warnings },
             providerMetadata: { $0.providerMetadata },
-            responseMetadata: { $0.responseMetadata }
+            responseMetadata: { $0.responseMetadata },
+            providerUsage: { $0.usage }
         ) {
             var result = try await model.transcribe(request)
             if result.requestMetadata == AIRequestMetadata() {
@@ -266,7 +267,12 @@ extension AI {
             usage: { _ in nil },
             warnings: { $0.warnings },
             providerMetadata: { $0.providerMetadata },
-            responseMetadata: { $0.responseMetadata }
+            responseMetadata: { result in
+                var metadata = result.responseMetadata
+                metadata.body = nil
+                return metadata
+            },
+            providerUsage: { $0.usage }
         ) {
             var result = try await model.speak(request)
             if result.requestMetadata == AIRequestMetadata() {

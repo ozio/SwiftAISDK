@@ -104,6 +104,8 @@ public struct AIImageModelGenerateContext: Sendable {
 }
 
 public struct AIImageModelMiddleware: Sendable {
+    public var overrideSupportsFileInputs: (@Sendable (_ model: any ImageModel) async -> Bool?)? = nil
+    public var overrideSupportsMaskInputs: (@Sendable (_ model: any ImageModel) async -> Bool?)? = nil
     public var overrideProviderID: (@Sendable (_ model: any ImageModel) -> String)?
     public var overrideModelID: (@Sendable (_ model: any ImageModel) -> String)?
     public var transformRequest: (@Sendable (AIImageModelTransformContext) async throws -> ImageGenerationRequest)?
@@ -119,6 +121,20 @@ public struct AIImageModelMiddleware: Sendable {
         self.overrideModelID = overrideModelID
         self.transformRequest = transformRequest
         self.wrapGenerate = wrapGenerate
+    }
+
+    public init(
+        overrideSupportsFileInputs: (@Sendable (_ model: any ImageModel) async -> Bool?)?,
+        overrideSupportsMaskInputs: (@Sendable (_ model: any ImageModel) async -> Bool?)? = nil,
+        overrideProviderID: (@Sendable (_ model: any ImageModel) -> String)? = nil,
+        overrideModelID: (@Sendable (_ model: any ImageModel) -> String)? = nil,
+        transformRequest: (@Sendable (AIImageModelTransformContext) async throws -> ImageGenerationRequest)? = nil,
+        wrapGenerate: (@Sendable (AIImageModelGenerateContext) async throws -> ImageGenerationResult)? = nil
+    ) {
+        self.init(overrideProviderID: overrideProviderID, overrideModelID: overrideModelID,
+                  transformRequest: transformRequest, wrapGenerate: wrapGenerate)
+        self.overrideSupportsFileInputs = overrideSupportsFileInputs
+        self.overrideSupportsMaskInputs = overrideSupportsMaskInputs
     }
 }
 

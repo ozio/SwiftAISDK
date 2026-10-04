@@ -1,5 +1,7 @@
 import Foundation
 
+public typealias AIUIDataPartConverter = @Sendable (AIUIDataPart) throws -> AIContentPart?
+
 public func convertToModelMessages(
     _ messages: [AIUIMessage]
 ) throws -> [AIMessage] {
@@ -10,12 +12,40 @@ public func convertToModelMessages(
     _ messages: [AIUIMessage],
     ignoreIncompleteToolCalls: Bool
 ) throws -> [AIMessage] {
+    try convertToModelMessages(messages, ignoreIncompleteToolCalls: ignoreIncompleteToolCalls, convertDataPart: nil)
+}
+
+public func convertToModelMessages(
+    _ messages: [AIUIMessage],
+    ignoreIncompleteToolCalls: Bool = false,
+    convertDataPart: AIUIDataPartConverter?
+) throws -> [AIMessage] {
     _ = try validateUIMessages(messages)
+    let lastUserIndex = messages.lastIndex { $0.role == .user } ?? -1
     return try messages.enumerated().flatMap { index, message in
-        let filteredMessage = ignoreIncompleteToolCalls
+        var filteredMessage = ignoreIncompleteToolCalls
             ? message.omittingPreliminaryToolCalls()
             : message
-        let modelMessage = try convertToModelMessage(filteredMessage, path: "messages[\(index)]")
+        if index < lastUserIndex {
+            let completedIDs = Set(message.parts.compactMap { part -> String? in
+                if case let .toolResult(result) = part { return result.toolCallID }
+                return nil
+            })
+            let responseIDs = Set(message.parts.compactMap { part -> String? in
+                if case let .toolApprovalResponse(response) = part { return response.id }
+                return nil
+            })
+            let pendingIDs = Set(message.parts.compactMap { part -> String? in
+                if case let .toolApprovalRequest(request) = part, !completedIDs.contains(request.toolCallID ?? ""), !responseIDs.contains(request.id) { return request.toolCallID }
+                return nil
+            })
+            filteredMessage.parts.removeAll { part in
+                if case let .toolCall(call) = part { return pendingIDs.contains(call.id) }
+                if case let .toolApprovalRequest(request) = part { return pendingIDs.contains(request.toolCallID ?? "") }
+                return false
+            }
+        }
+        let modelMessage = try convertToModelMessage(filteredMessage, path: "messages[\(index)]", convertDataPart: convertDataPart)
         return splitAssistantResponseMessages(modelMessage)
     }
 }
@@ -24,7 +54,7 @@ public func convertToModelMessage(_ message: AIUIMessage) throws -> AIMessage {
     try convertToModelMessage(message, path: "message")
 }
 
-private func convertToModelMessage(_ message: AIUIMessage, path: String) throws -> AIMessage {
+private func convertToModelMessage(_ message: AIUIMessage, path: String, convertDataPart: AIUIDataPartConverter? = nil) throws -> AIMessage {
     var content: [AIContentPart] = []
     var providerMetadata: [String: JSONValue] = [:]
     var systemText = ""
@@ -69,7 +99,9 @@ private func convertToModelMessage(_ message: AIUIMessage, path: String) throws 
             content.append(.toolApprovalResponse(response))
         case let .custom(value, providerMetadata):
             content.append(.custom(value, providerMetadata: providerMetadata))
-        case .source, .reasoningFile, .data, .metadata, .error, .raw:
+        case let .data(data):
+            if let part = try convertDataPart?(data) { content.append(part) }
+        case .source, .reasoningFile, .metadata, .error, .raw:
             break
         }
     }

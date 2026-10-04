@@ -19,6 +19,7 @@ struct AnthropicModelCapabilities {
     var rejectsThinkingDisabledAboveHighEffort: Bool
     var rejectsThinkingDisabled: Bool
     var rejectsForcedToolUse: Bool
+    var supportsBetweenToolsThinking: Bool
     var isKnownModel: Bool
 }
 
@@ -359,11 +360,12 @@ func anthropicModelCapabilities(_ modelID: String) -> AnthropicModelCapabilities
             rejectsThinkingDisabledAboveHighEffort: rejectsThinkingDisabledAboveHighEffort,
             rejectsThinkingDisabled: rejectsThinkingDisabled,
             rejectsForcedToolUse: rejectsForcedToolUse,
+            supportsBetweenToolsThinking: modelID.contains("claude-sonnet-5-5"),
             isKnownModel: isKnownModel
         )
     }
 
-    if modelID.contains("claude-opus-5-5") {
+    if modelID.contains("claude-opus-5-5") || modelID.contains("claude-sonnet-5-5") {
         return capabilities(maxOutputTokens: 128_000, supportsStructuredOutput: true, supportsAdaptiveThinking: true, rejectsSamplingParameters: true, supportsXhighEffort: true, rejectsThinkingDisabledAboveHighEffort: true, rejectsThinkingDisabled: true, rejectsForcedToolUse: true, isKnownModel: true)
     }
     if modelID.contains("claude-opus-5") {
@@ -500,6 +502,7 @@ func anthropicReasoningConfig(
     warnings: inout [AIWarning]
 ) -> (thinking: JSONValue, effort: String?)? {
     if reasoning == "none" {
+        if capabilities.supportsBetweenToolsThinking { return (["type": "between_tools"], nil) }
         if capabilities.rejectsThinkingDisabled {
             warnings.append(AIWarning(
                 type: "compatibility",
@@ -590,7 +593,10 @@ func anthropicNormalizeThinkingForCapabilities(
 ) {
     guard capabilities.rejectsThinkingDisabled,
           let thinkingType = body["thinking"]?["type"]?.stringValue else { return }
-    if thinkingType == "disabled" {
+    if thinkingType == "disabled", capabilities.supportsBetweenToolsThinking {
+        body["thinking"] = ["type": "between_tools"]
+        warnings.append(AIWarning(type: "unsupported", feature: "providerOptions.anthropic.thinking", message: "thinking cannot be disabled for \(modelID). Using 'between_tools' thinking, the lowest thinking setting, instead."))
+    } else if thinkingType == "disabled" {
         body.removeValue(forKey: "thinking")
         warnings.append(AIWarning(
             type: "unsupported",
@@ -613,6 +619,12 @@ func anthropicApplyDisabledThinkingEffortLimit(
     capabilities: AnthropicModelCapabilities,
     warnings: inout [AIWarning]
 ) {
+    if body["thinking"]?["type"]?.stringValue == "between_tools", var config = body["output_config"]?.objectValue,
+       let effort = config["effort"]?.stringValue, effort == "xhigh" || effort == "max" {
+        config["effort"] = "high"
+        body["output_config"] = .object(config)
+        warnings.append(AIWarning(type: "unsupported", feature: "providerOptions.anthropic.effort", message: "effort '\(effort)' is not supported with 'between_tools' thinking. The effort has been lowered to 'high'."))
+    }
     guard capabilities.rejectsThinkingDisabledAboveHighEffort,
           body["thinking"]?["type"]?.stringValue == "disabled",
           var outputConfig = body["output_config"]?.objectValue,
@@ -842,7 +854,7 @@ func applyAnthropicThinkingRules(
 ) {
     guard var thinking = body["thinking"]?.objectValue,
           let type = thinking["type"]?.stringValue,
-          type == "enabled" || type == "adaptive" else {
+          type == "enabled" || type == "adaptive" || type == "between_tools" else {
         if isAnthropicModel, requestTemperature != nil, requestTopP != nil {
             body["top_p"] = nil
             warnings.append(AIWarning(

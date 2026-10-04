@@ -1,7 +1,7 @@
 import CryptoKit
 import Foundation
 
-private let amazonBedrockUserAgent = "ai-sdk/amazon-bedrock/5.0.97"
+private let amazonBedrockUserAgent = "ai-sdk-amazon-bedrock/5.0.105"
 
 public struct AmazonBedrockCredentials: Sendable {
     public var accessKeyID: String
@@ -67,6 +67,10 @@ public final class AmazonBedrockProvider: AIProvider, @unchecked Sendable {
     public init(settings: AmazonBedrockProviderSettings = AmazonBedrockProviderSettings()) throws {
         let region = settings.region ?? environmentValue(["AWS_REGION", "AWS_DEFAULT_REGION"]) ?? "us-east-1"
         let globalEndpointURL = environmentValue(["AWS_ENDPOINT_URL"])
+        if settings.baseURL == nil, globalEndpointURL == nil,
+           environmentValue(["AWS_ENDPOINT_URL_BEDROCK_RUNTIME"]) == nil || environmentValue(["AWS_ENDPOINT_URL_BEDROCK_AGENT_RUNTIME"]) == nil {
+            try validateHostnamePart(region, argument: "region")
+        }
         let runtimeBaseURL = resolveAmazonBedrockBaseURL(
             baseURL: settings.baseURL,
             serviceEndpointURL: environmentValue(["AWS_ENDPOINT_URL_BEDROCK_RUNTIME"]),
@@ -138,6 +142,9 @@ public final class AmazonBedrockAnthropicProvider: AIProvider, @unchecked Sendab
 
     public init(settings: AmazonBedrockProviderSettings = AmazonBedrockProviderSettings()) throws {
         let region = settings.region ?? environmentValue(["AWS_REGION", "AWS_DEFAULT_REGION"]) ?? "us-east-1"
+        if settings.baseURL == nil, environmentValue(["AWS_ENDPOINT_URL", "AWS_ENDPOINT_URL_BEDROCK_RUNTIME"]) == nil {
+            try validateHostnamePart(region, argument: "region")
+        }
         let runtimeBaseURL = resolveAmazonBedrockBaseURL(
             baseURL: settings.baseURL,
             serviceEndpointURL: environmentValue(["AWS_ENDPOINT_URL_BEDROCK_RUNTIME"]),
@@ -192,6 +199,7 @@ public final class BedrockMantleProvider: AIProvider, @unchecked Sendable {
 
     public init(settings: AmazonBedrockProviderSettings = AmazonBedrockProviderSettings()) throws {
         let region = settings.region ?? environmentValue(["AWS_REGION", "AWS_DEFAULT_REGION"]) ?? "us-east-1"
+        if settings.baseURL == nil { try validateHostnamePart(region, argument: "region") }
         let customBaseURL = settings.baseURL.map(withoutTrailingSlash)
         let defaultRoot = "https://bedrock-mantle.\(region).api.aws"
         let baseURL = customBaseURL ?? "\(defaultRoot)/v1"

@@ -595,6 +595,7 @@ private func parseGatewayTranscriptionStreamPart(
               let segments = gatewayStreamSegments(segmentValues),
               gatewayOptionalStringIsValid(raw["language"]),
               gatewayOptionalNumberIsValid(raw["durationInSeconds"]),
+              raw["usage"] == nil || raw["usage"]?.objectValue != nil,
               let metadata = gatewayStreamProviderMetadata(raw["providerMetadata"])
         else {
             return nil
@@ -604,7 +605,8 @@ private func parseGatewayTranscriptionStreamPart(
             segments: segments,
             language: raw["language"]?.stringValue,
             durationInSeconds: raw["durationInSeconds"]?.doubleValue,
-            providerMetadata: metadata
+            providerMetadata: metadata,
+            usage: raw["usage"]?.objectValue
         ))
 
     case "raw":

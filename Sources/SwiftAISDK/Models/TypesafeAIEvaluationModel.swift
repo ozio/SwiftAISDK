@@ -64,7 +64,7 @@ public final class TypeSafeAIEvaluationModel: AIEvaluationModelV4, @unchecked Se
         modelHeaders["authorization"] = modelHeaders["authorization"] ?? "Bearer \(apiKey)"
         modelHeaders = withUserAgentSuffix(
             modelHeaders,
-            "ai-sdk/typesafe-ai/\(typeSafeAIProviderVersion)"
+            "ai-sdk-typesafe-ai/\(typeSafeAIProviderVersion)"
         )
         let headers = combineHeaders(modelHeaders, normalizeHeaders(options.headers))
         let request = AIHTTPRequest(

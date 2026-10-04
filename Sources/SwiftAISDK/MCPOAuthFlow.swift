@@ -12,6 +12,7 @@ public enum MCPOAuth {
         protocolVersion: String = MCPClient.latestProtocolVersion,
         transport: any AITransport = URLSessionTransport.shared
     ) async throws -> MCPOAuthAuthResult {
+        let refreshAttempt = MCPOAuthRefreshAttempt()
         do {
             return try await authInternal(
                 provider: provider,
@@ -22,7 +23,8 @@ public enum MCPOAuth {
                 scope: scope,
                 resourceMetadataURL: resourceMetadataURL,
                 protocolVersion: protocolVersion,
-                transport: transport
+                transport: transport,
+                refreshAttempt: refreshAttempt
             )
         } catch let error as MCPOAuthServerError {
             switch error.code {
@@ -37,7 +39,7 @@ public enum MCPOAuth {
                 }
                 await provider.invalidateCredentials(.all)
             case "invalid_grant":
-                await provider.invalidateCredentials(.tokens)
+                await provider.invalidateCredentials(.tokens, context: await refreshAttempt.context)
             default:
                 throw error
             }
@@ -291,7 +293,12 @@ public enum MCPOAuth {
     }
 }
 
-func authInternal(
+private actor MCPOAuthRefreshAttempt {
+    var context: MCPOAuthCredentialInvalidationContext?
+    func record(_ tokens: MCPOAuthTokens) { context = MCPOAuthCredentialInvalidationContext(tokens: tokens) }
+}
+
+private func authInternal(
     provider: any MCPOAuthClientProvider,
     serverURL: URL,
     authorizationCode: String?,
@@ -300,7 +307,8 @@ func authInternal(
     scope: String?,
     resourceMetadataURL: URL?,
     protocolVersion: String,
-    transport: any AITransport
+    transport: any AITransport,
+    refreshAttempt: MCPOAuthRefreshAttempt? = nil
 ) async throws -> MCPOAuthAuthResult {
     var resourceMetadata: MCPOAuthProtectedResourceMetadata?
     var authorizationServerURL: URL?
@@ -447,10 +455,11 @@ func authInternal(
         if let storedAuthorizationServerInformation = try await storedAuthorizationServerInformation(provider: provider, clientInformation: clientInformation, tokens: currentTokens) {
             try assertAuthorizationServerInformationMatches(storedAuthorizationServerInformation, currentAuthorizationServerInformation)
         } else {
-            await provider.invalidateCredentials(.tokens)
+            await provider.invalidateCredentials(.tokens, context: MCPOAuthCredentialInvalidationContext(tokens: currentTokens))
         }
         do {
             if try await storedAuthorizationServerInformation(provider: provider, clientInformation: clientInformation, tokens: currentTokens) != nil {
+                await refreshAttempt?.record(currentTokens)
                 let tokens = try await MCPOAuth.refreshAuthorization(
                     authorizationServerURL: resolvedAuthorizationServerURL,
                     metadata: metadata,
@@ -552,7 +561,7 @@ private func assertAuthorizationServerInformationMatches(
     guard issuerMatches,
           normalizedStored.authorizationServerURL == normalizedCurrent.authorizationServerURL,
           normalizedStored.tokenEndpoint == normalizedCurrent.tokenEndpoint else {
-        throw MCPClientError(message: "OAuth authorization server metadata does not match the metadata that issued the stored credentials")
+        throw MCPOAuthAuthorizationServerMismatchError(message: "OAuth authorization server metadata does not match the metadata that issued the stored credentials")
     }
 }
 

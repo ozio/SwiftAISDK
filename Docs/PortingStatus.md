@@ -1,6 +1,6 @@
 # Porting Status
 
-Snapshot date: 2026-09-27
+Snapshot date: 2026-10-04
 
 SwiftAISDK currently ports the provider-facing parts of Vercel AI SDK into a
 SwiftPM library. The package has a broad Swift-native facade, provider registry,
@@ -56,14 +56,19 @@ for exact evidence.
 | Latest upstream test diff audit | `Docs/FreshUpstreamTestDiffAudit.md` |
 
 Provider and core package versions were checked against npm registry metadata
-on 2026-09-27. The packages changed by this weekly pass were reviewed from
+on 2026-10-04. The packages changed by this weekly pass were reviewed from
 their exact published tarballs; per-package decisions are recorded in
-`Docs/UpstreamPackageDiffAudit.md`. The current upstream inventory contains 948
-executable test/spec paths in 81 groups. The fresh diff audit separately
-classifies 169 changed executable paths and 27 declaration-test (`test-d`)
-paths: 88 portable, one deferred, 22 with no Swift action, and 85 out of scope.
+`Docs/UpstreamPackageDiffAudit.md`. The current upstream inventory contains 976 executable test/spec paths in 82 groups. The fresh diff audit accounts for 210 changed executable paths and nine declaration-test paths, with a per-path disposition.
 
 ## Provider State
+
+The 2026-10-04 pass audits all 52 tracked packages (50 changed, two current), implements image capability discovery, native audio usage/telemetry, configurable tool search, safe stream correlation/smoothing and current Azure/Anthropic/Bedrock/OpenAI/Gateway behavior. Full package decisions and exact old/latest versions are in `UpstreamPackageDiffAudit.md`.
+
+Fresh search plus exact prefix enumeration finds 88 scoped packages; **Topaz 3.0.0 is a new, unimplemented image/video enhancement provider**. Its port is the recommended next provider vertical. The empty SpaceXAI reservation and framework/harness packages remain outside automatic provider implementation.
+
+Existing call/initializer/iterator signatures are retained; newly exposed APIs and the MAI audio family warrant a minor SwiftPM release. Remaining shared/native gaps are explicitly listed in the package audit and Active Product Gaps below. Final verification passed: 54 focused parser/provider/core regressions; 3,008 tests in 22 suites in both full parallel and serial runs; the Examples build; docs dependency installation; zero docs diagnostics and a 93-page site build; 52 current registry baselines; and whitespace validation. Exact commands are recorded in the package audit.
+
+### Earlier weekly passes
 
 The 2026-09-27 weekly pass audited all 52 tracked core and provider/product
 rows from fresh registry data and exact published tarballs. Fifty rows moved,
@@ -349,12 +354,14 @@ one of these is true:
 
 | Priority | Gap | Next action |
 | --- | --- | --- |
+| P1 | Newly discovered `@ai-sdk/topaz@3.0.0` has image/video enhancement providers and is not implemented. | Port its enhancement requests, options, job lifecycle, results/errors and fixtures as a separate provider vertical. |
+| P1 | Google/Vertex Gemini transcription and Open Responses extension codecs remain absent native adapters. | Design and port each complete request/stream/replay surface before advertising parity. |
 | P0 | Completion evidence can drift as npm packages and upstream tests change. | Before release, rerun package discovery, regenerate upstream inventory, compare ledgers, run full `swift test`, and record the audit. |
 | P0 | Live verification is representative, not exhaustive. | Add opt-in live smoke only for distinct transport families or concrete production risks. Keep it disabled by default. |
 | P1 | `URLSessionTransport` currently adapts `URLSession.AsyncBytes` into one `Data` value per byte. This preserves minimum latency and correct cancellation, but adds allocation overhead and offers no demand-aware backpressure. | Introduce a cancelable, demand-driven `AIHTTPBody` sequence backed by a delegate-owned `URLSession`, with bounded lossless buffering and explicit high/low watermarks. Keep the injected-session compatibility path until delegate, authentication, cache, metrics, and lifecycle semantics can be preserved. |
 | P1 | xAI realtime and OpenAI Live server WebSocket are represented, but browser WebRTC/client permissions, provider-backed Responses delegation, non-Live OpenAI Realtime, Google Realtime 3.8, ElevenLabs realtime STT, and streaming translation remain deferred. | Extend `AIRealtimeModelV4` one complete transport/provider vertical at a time; do not advertise browser or delegation modes until their native lifecycle is implemented and tested. |
 | P1 | Batch V4 has Anthropic, OpenAI Responses, Gateway, Google, and xAI adapters. Async Video V4 has Black Forest Labs, Fal, ByteDance, and Gateway adapters, but other capable providers still use unary or internal-polling paths. | Migrate additional batch/video providers incrementally when persisted operation state, native webhook behavior, and provider-specific cancellation semantics can be translated with focused tests. |
-| P1 | `@ai-sdk/provider-utils@5.0.49` retains resolver-backed DNS address pinning for validated downloads; Swift validates literal/private hosts and every redirect and removes provider credentials across origins, but does not pin the resolved address. | Add resolver-aware connection pinning at the transport layer before claiming DNS-rebinding parity. |
+| P1 | `@ai-sdk/provider-utils@5.0.53` retains resolver-backed DNS address pinning for validated downloads; Swift validates literal/private hosts and every redirect and removes provider credentials across origins, but does not pin the resolved address. | Add resolver-aware connection pinning at the transport layer before claiming DNS-rebinding parity. |
 | P1 | Upstream preserves repeated tool-call IDs across explicit UI stream steps; Swift stream parts do not expose step boundaries. | Add a public step-boundary representation, then scope reducer tool-part identity to the active step with backwards lookup for late results. |
 | P1 | Provider option ergonomics are harder to discover than the core facade. | Add compact provider option examples to docs-site for non-obvious schemas and Swift differences. |
 | P1 | Tooling is broad but can be more polished. | Improve validation diagnostics, typed result/error surfaces, and provider-defined tool helper docs. |

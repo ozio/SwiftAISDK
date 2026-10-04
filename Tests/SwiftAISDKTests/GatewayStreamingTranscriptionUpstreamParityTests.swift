@@ -337,6 +337,20 @@ import Testing
     }
 }
 
+@Test(arguments: [JSONValue.null, JSONValue.number(1), JSONValue.array([JSONValue]())])
+func gatewayStreamingTranscriptionIgnoresMalformedUsageAndPreservesNativeUsage(usage: JSONValue) async throws {
+    let webSocket = GatewayTranscriptionTestWebSocketTransport()
+    let provider = try AIProviders.gateway(settings: .init(apiKey: "test-token"), webSocketTransport: webSocket)
+    let model = try provider.streamingTranscription("openai/gpt-realtime-whisper")
+    let result = try await model.stream(.init(audio: .chunks([]), inputAudioFormat: .init(mediaType: "audio/pcm", sampleRate: 16_000)))
+    let partsTask = Task { try await gatewayTranscriptionCollect(result.stream) }
+    webSocket.connection.open()
+    webSocket.connection.sendJSON(["type": "finish", "text": "invalid", "segments": [], "usage": usage])
+    webSocket.connection.sendJSON(["type": "finish", "text": "valid", "segments": [], "usage": ["seconds": 1]])
+    let parts = try await partsTask.value
+    #expect(parts == [.finish(.init(text: "valid", usage: ["seconds": 1]))])
+}
+
 private func gatewayTranscriptionCollect(
     _ stream: AsyncThrowingStream<StreamingTranscriptionPart, Error>
 ) async throws -> [StreamingTranscriptionPart] {

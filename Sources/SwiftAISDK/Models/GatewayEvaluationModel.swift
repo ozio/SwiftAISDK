@@ -127,7 +127,6 @@ public final class GatewayEvaluationModel: AIEvaluationModelV4, @unchecked Senda
 private let gatewayEvaluationFallbackMaxConditionDepth = 5
 private let gatewayEvaluationFallbackMaxConditionsPerList = 20
 private let gatewayEvaluationFallbackMaxQuestionLength = 256
-private let gatewayEvaluationFallbackMaxModelLength = 256
 
 private func validateGatewayEvaluationProviderOptions(
     _ providerOptions: [String: JSONValue]
@@ -148,7 +147,6 @@ private func validateGatewayEvaluationProviderOptions(
               Set(fallback.keys) == Set(["model", "when"]),
               let model = fallback["model"]?.stringValue,
               !model.isEmpty,
-              model.utf16.count <= gatewayEvaluationFallbackMaxModelLength,
               let condition = fallback["when"] else {
             throw gatewayEvaluationProviderOptionsError("Gateway conditional model fallbacks are invalid.")
         }
@@ -171,8 +169,8 @@ private func validateGatewayEvaluationFallbackCondition(
         throw gatewayEvaluationProviderOptionsError("Gateway evaluation fallback conditions must be objects.")
     }
 
-    if Set(condition.keys) == Set(["question", "confidenceBelow"]) {
-        try validateGatewayEvaluationQuestionID(condition["question"])
+    if Set(condition.keys) == Set(["question", "confidenceBelow"]) || Set(condition.keys) == Set(["confidenceBelow"]) {
+        if let question = condition["question"] { try validateGatewayEvaluationQuestionID(question) }
         try validateGatewayEvaluationProbability(
             condition["confidenceBelow"],
             message: "Gateway confidenceBelow must be a finite number from 0 through 1."
@@ -180,8 +178,8 @@ private func validateGatewayEvaluationFallbackCondition(
         return
     }
 
-    if Set(condition.keys) == Set(["question", "probabilityBetween"]) {
-        try validateGatewayEvaluationQuestionID(condition["question"])
+    if Set(condition.keys) == Set(["question", "probabilityBetween"]) || Set(condition.keys) == Set(["probabilityBetween"]) {
+        if let question = condition["question"] { try validateGatewayEvaluationQuestionID(question) }
         guard let bounds = condition["probabilityBetween"]?.arrayValue,
               bounds.count == 2 else {
             throw gatewayEvaluationProviderOptionsError("Gateway probabilityBetween must contain exactly two probabilities.")

@@ -39,7 +39,8 @@ struct AnthropicStreamingContentBlocks {
             let id = String(index)
             switch type {
             case "fallback":
-                return []
+                guard let metadata = anthropicFallbackMetadata(block) else { return [] }
+                return [.custom(["kind": "anthropic.fallback"], providerMetadata: ["anthropic": metadata])]
             case "text":
                 guard !ignoresTextBlocks else { return [] }
                 blocks[index] = .text()

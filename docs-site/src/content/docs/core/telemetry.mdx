@@ -12,6 +12,13 @@ Use telemetry when you want structured events for observability, debugging, bill
 
 ## Integrations
 
+Audio calls expose native billing JSON in `Telemetry.Event.providerUsage`,
+separately from language/embedding `TokenUsage`. Unary speech/transcription
+results and streaming transcription finishes also expose `usage`.
+`AI.streamTranscribe` measures bytes as the provider consumes chunks and emits
+one terminal end/error/abort event. Speech output records length and content
+type without including generated audio bytes.
+
 Implement `Telemetry.Integration` to receive `Telemetry.Event` values. The default `executeLanguageModelCall` and `executeTool` implementations simply run the underlying operation, so most integrations only need `record(_:)`.
 
 ```swift

@@ -72,6 +72,18 @@ public struct AIUIMessageStreamReducer: Sendable {
 
     public init(message: AIUIMessage = .assistant()) {
         self.message = message
+        for (index, part) in message.parts.enumerated() {
+            switch part {
+            case let .text(text) where text.state == .streaming:
+                textPartIndexes[text.id ?? "$default"] = index
+            case let .reasoning(reasoning) where reasoning.state == .streaming:
+                reasoningPartIndexes[reasoning.id ?? "$default"] = index
+            case let .toolCall(call):
+                toolCallPartIndexes[call.id] = index
+                if (try? decodeJSONBody(Data(call.arguments.utf8))) == nil { activeToolInputIDs.insert(call.id) }
+            default: break
+            }
+        }
     }
 
     @discardableResult

@@ -1,5 +1,27 @@
 import Foundation
 
+func anthropicFallbackMetadata(_ block: JSONValue) -> JSONValue? {
+    guard block["type"]?.stringValue == "fallback",
+          let from = block["from"]?["model"]?.stringValue,
+          let to = block["to"]?["model"]?.stringValue else { return nil }
+    return ["type": "fallback", "from": ["model": .string(from)], "to": ["model": .string(to)]]
+}
+
+func anthropicValidateFallbackContent(_ content: JSONValue?, providerID: String) throws {
+    for block in content?.arrayValue ?? [] where block["type"]?.stringValue == "fallback" {
+        guard anthropicFallbackMetadata(block) != nil else {
+            throw AIError.invalidResponse(provider: providerID, message: "Anthropic fallback content must include from.model and to.model strings.")
+        }
+    }
+}
+
+func anthropicValidateFallbackEvent(_ raw: JSONValue, providerID: String) throws {
+    try anthropicValidateFallbackContent(raw["message"]?["content"], providerID: providerID)
+    if raw["type"]?.stringValue == "content_block_start", let block = raw["content_block"] {
+        try anthropicValidateFallbackContent(.array([block]), providerID: providerID)
+    }
+}
+
 struct AnthropicGeneratedContent {
     var content: [AIResultContentPart]
     var text: String?
@@ -58,6 +80,9 @@ func anthropicGeneratedContent(
         }
 
         switch type {
+        case "fallback":
+            guard let metadata = anthropicFallbackMetadata(part) else { continue }
+            content.append(.custom(["kind": "anthropic.fallback"], providerMetadata: ["anthropic": metadata]))
         case "thinking":
             let thinking = part["thinking"]?.stringValue ?? ""
             reasoning += thinking

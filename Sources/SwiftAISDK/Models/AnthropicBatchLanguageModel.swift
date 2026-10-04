@@ -691,7 +691,7 @@ private func isValidAnthropicBatchContentPart(_ part: JSONValue) -> Bool {
             return part["thinking"]?.stringValue != nil && part["signature"]?.stringValue != nil
         case "redacted_thinking": return part["data"]?.stringValue != nil
         case "compaction": return part["content"]?.stringValue != nil
-        case "fallback": return true
+        case "fallback": return anthropicFallbackMetadata(part) != nil
         case "container_upload": return part["file_id"]?.stringValue != nil
         case "tool_use":
             return part["id"]?.stringValue != nil

@@ -362,7 +362,8 @@ public final class GoogleSpeechModel: SpeechModel, @unchecked Sendable {
                 "mimeType": mimeType.map(JSONValue.string) ?? .null
             ])],
             requestMetadata: AIRequestMetadata(body: prepared.body, headers: request.headers),
-            responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
+            responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID),
+            usage: raw["usageMetadata"]?.objectValue
         )
     }
 }

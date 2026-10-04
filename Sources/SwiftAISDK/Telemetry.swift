@@ -30,6 +30,8 @@ public enum Telemetry {
         public var input: JSONValue?
         public var output: JSONValue?
         public var usage: TokenUsage?
+        /// Native audio usage, such as characters, seconds, or provider counters.
+        public var providerUsage: [String: JSONValue]? = nil
         public var warnings: [AIWarning]
         public var providerMetadata: [String: JSONValue]
         public var responseMetadata: AIResponseMetadata

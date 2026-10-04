@@ -1,14 +1,14 @@
 # Core V7 Parity
 
-Snapshot date: 2026-09-27
+Snapshot date: 2026-10-04
 
 This document tracks SwiftAISDK against the current AI SDK Core and Errors
 reference. It is intentionally high-level: product status belongs in
 `PortingStatus.md`, provider package drift belongs in `ProviderVersionLedger.md`,
 and provider behavior belongs in focused tests.
 Implementation-sensitive UI/chat items are also checked against npm source
-snapshots, currently `ai@7.0.117`, `@ai-sdk/provider@4.0.18`,
-`@ai-sdk/provider-utils@5.0.49`, and `@ai-sdk/react@4.0.120`.
+snapshots, currently `ai@7.0.127`, `@ai-sdk/provider@4.0.21`,
+`@ai-sdk/provider-utils@5.0.53`, and `@ai-sdk/react@4.0.130`.
 
 References:
 
@@ -16,9 +16,26 @@ References:
 - <https://ai-sdk.dev/docs/reference/ai-sdk-errors>
 - <https://ai-sdk.dev/docs/reference/ai-sdk-ui>
 
+## 2026-10-04 Native Parity
+
+Async image capability middleware; custom tool-search ranking and result limits; metadata-safe smoothing; audio usage and consumed-byte streaming telemetry; data-part conversion in agent UI streams; native partial-input resume and superseded approval filtering. Swift dictionaries and value equality already cover prototype/cross-realm fixes. Browser HTTP reconnect, raw-input UI wire-state migration, Node SSE keep-alive/response headers, diagnostics-channel instrumentation, and workflow serializers remain outside the native surface.
+
+Async tri-state file/mask image capabilities and optional native JSON speech/transcription/stream-finish usage are exposed with defaults and retained initializer overloads.
+
+Complete ASCII DNS-label validation, ambiguity-safe ID/index/name tool-call correlation, unique IDs for missing/reused IDs, structural argument tracking, stable mixed-index flush order, and transcription finish usage. Swift URLSession/header/environment types cover the JavaScript-only helper changes.
+
+Typed authorization-server mismatch errors; invalidation context captures the failed refresh generation so shared stores can compare-and-delete without deleting a concurrent refresh. Swift dictionaries already isolate reserved tool names.
+
+`SpeechResult.usage`, `TranscriptionResult.usage`, `StreamingTranscriptionFinish.usage`, and `Telemetry.Event.providerUsage` retain provider-native JSON rather than coercing audio billing units into token usage. `AI.streamTranscribe` counts chunks only when the provider consumes them. Existing initializer and iterator signatures are retained. Image flags are `Bool?` async getters: nil is unknown, and middleware may explicitly override a known flag to nil.
+
 ## Latest Core Package Diff Notes
 
 Checked npm package diffs:
+
+- `ai@7.0.117 -> 7.0.127`
+- `@ai-sdk/provider@4.0.18 -> 4.0.21`
+- `@ai-sdk/provider-utils@5.0.49 -> 5.0.53`
+- `@ai-sdk/react@4.0.120 -> 4.0.130`
 
 - `ai@7.0.107 -> 7.0.117`
 - `@ai-sdk/provider@4.0.17 -> 4.0.18`

@@ -116,11 +116,12 @@ public final class GoogleVertexProvider: AIProvider, @unchecked Sendable {
             guard let project, let location else {
                 throw AIError.invalidURL("Google Vertex OAuth mode requires project/location or baseURL.")
             }
+            try validateHostnamePart(location, argument: "location")
             let host = googleVertexRegionalHost(location: location)
             baseURL = "https://\(host)/v1beta1/projects/\(project)/locations/\(location)/publishers/google"
         }
 
-        let headers = withUserAgentSuffix(settings.headers, "ai-sdk/google-vertex/5.0.95")
+        let headers = withUserAgentSuffix(settings.headers, "ai-sdk-google-vertex/5.0.101")
         config = GoogleVertexConfig(
             providerID: providerID,
             baseURL: baseURL,
@@ -182,7 +183,8 @@ public final class GoogleVertexProvider: AIProvider, @unchecked Sendable {
     }
 
     public func transcriptionModel(_ modelID: String) throws -> any TranscriptionModel {
-        GoogleVertexTranscriptionModel(modelID: modelID, config: config.withProviderID("google.vertex.transcription"))
+        if let location = config.location { try validateHostnamePart(location, argument: "location") }
+        return GoogleVertexTranscriptionModel(modelID: modelID, config: config.withProviderID("google.vertex.transcription"))
     }
 
     public func speechModel(_ modelID: String) throws -> any SpeechModel {

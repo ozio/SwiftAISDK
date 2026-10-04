@@ -1,6 +1,6 @@
 import Foundation
 
-private let aiEvaluationUserAgent = "ai/7.0.117"
+private let aiEvaluationUserAgent = "ai/7.0.127"
 
 extension AI {
     /// Source-compatible direct-model entry point retained from SwiftAISDK 1.9.0.

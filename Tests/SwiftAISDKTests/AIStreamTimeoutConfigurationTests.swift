@@ -208,6 +208,7 @@ func aiStreamTotalAndStepTimeoutsIncludeRetryBackoff(
 }
 
 @Test func aiStreamStepTimeoutRearmsForEveryModelCallStep() async throws {
+    // Allow the full parallel suite to reach the step/tool before its timer fires.
     let toolCall = AIToolCall(id: "call-1", name: "tool1", arguments: "{}")
     let model = TimeoutScriptLanguageModel(scripts: [
         [
@@ -217,7 +218,7 @@ func aiStreamTotalAndStepTimeoutsIncludeRetryBackoff(
         ],
         [
             .yield(.responseMetadata(AIResponseMetadata(id: "response-2"))),
-            .sleep(200_000_000),
+            .sleep(2_000_000_000),
         ],
     ])
     let tool = AITool(
@@ -233,18 +234,19 @@ func aiStreamTotalAndStepTimeoutsIncludeRetryBackoff(
             request: LanguageModelRequest(messages: [.user("test-input")]),
             executableTools: [tool],
             maxSteps: 2,
-            timeout: AIStreamTimeoutConfiguration(stepNanoseconds: 30_000_000),
+            timeout: AIStreamTimeoutConfiguration(stepNanoseconds: 1_000_000_000),
             retryPolicy: .none
         ) {}
         Issue.record("Expected the second model-call step to time out.")
     } catch let error as AIError {
-        #expect(error == .timeout(durationNanoseconds: 30_000_000))
+        #expect(error == .timeout(durationNanoseconds: 1_000_000_000))
     }
 
     #expect(model.streamRequestCount == 2)
 }
 
 @Test func aiStreamStepTimeoutRemainsActiveThroughClientToolExecution() async throws {
+    // Allow the full parallel suite to reach the step/tool before its timer fires.
     let model = TimeoutScriptLanguageModel(scripts: [[
         .yield(.toolCall(AIToolCall(id: "call-1", name: "tool1", arguments: "{}"))),
         .yield(.finish(reason: "tool-calls", usage: nil)),
@@ -271,12 +273,12 @@ func aiStreamTotalAndStepTimeoutsIncludeRetryBackoff(
             request: LanguageModelRequest(messages: [.user("test-input")]),
             executableTools: [tool],
             maxSteps: 2,
-            timeout: AIStreamTimeoutConfiguration(stepNanoseconds: 30_000_000),
+            timeout: AIStreamTimeoutConfiguration(stepNanoseconds: 1_000_000_000),
             retryPolicy: .none
         ) {}
         Issue.record("Expected tool execution to exceed the step timeout.")
     } catch let error as AIError {
-        #expect(error == .timeout(durationNanoseconds: 30_000_000))
+        #expect(error == .timeout(durationNanoseconds: 1_000_000_000))
     }
 
     let signal = try #require(toolSignal.signal)

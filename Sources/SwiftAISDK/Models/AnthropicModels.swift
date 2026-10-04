@@ -369,6 +369,7 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
             throw anthropicHTTPStatusError(provider: providerID, response: response)
         }
         let raw = try response.jsonValue()
+        try anthropicValidateFallbackContent(raw["content"], providerID: providerID)
         let generatedContent = anthropicGeneratedContent(
             from: raw["content"],
             providerID: providerID,
@@ -460,6 +461,7 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
                     streamEvents: for try await event in serverSentEvents(from: response.body) {
                         if event.data == "[DONE]" { break }
                         let raw = try decodeJSONBody(Data(event.data.utf8))
+                        try anthropicValidateFallbackEvent(raw, providerID: providerID)
                         if request.includeRawChunks {
                             continuation.yield(.raw(raw))
                         }
@@ -765,6 +767,7 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
         var cacheBreakpointCount = 0
         var system: [JSONValue] = []
         var conversation: [JSONValue] = []
+        var lastUserMessageIndex = -1
         var warnedAboutInitialToolChanges = false
         for message in messages {
             let toolChanges = message.role == .system
@@ -861,11 +864,15 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
                converted["content"]?.arrayValue?.isEmpty == true {
                 continue
             }
+            if message.role == .user, !message.content.isEmpty {
+                lastUserMessageIndex = conversation.last?["role"]?.stringValue == "user" ? conversation.count - 1 : conversation.count
+            }
             appendAnthropicMessage(
                 converted,
                 to: &conversation
             )
         }
+        anthropicNormalizeHistoricalCallers(in: &conversation, before: lastUserMessageIndex, warnings: &warnings)
         trimTrailingAssistantWhitespace(in: &conversation)
         return (system, conversation)
     }
@@ -1170,18 +1177,18 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
                     return .object(block)
                 }
                 if let toolsetName = anthropicToolsetName(from: call.providerMetadata, providerID: providerID) {
-                    var input = anthropicToolArguments(call.arguments).objectValue ?? [:]
-                    guard let action = input.removeValue(forKey: "action")?.stringValue else {
+                    let input = anthropicToolArguments(call.arguments).objectValue ?? [:]
+                    let action = input["action"]?.stringValue
+                    if action == nil {
                         warnings.append(AIWarning(
                             type: "other",
                             message: "toolset tool call for tool \(call.name) is missing the action"
                         ))
-                        return nil
                     }
                     var block: [String: JSONValue] = [
                         "type": .string("tool_use"),
                         "id": .string(call.id),
-                        "name": .string(action),
+                        "name": .string(action ?? toolsetName),
                         "toolset_name": .string(toolsetName),
                         "input": .object(input)
                     ]
@@ -1254,7 +1261,15 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
                     warnings: &warnings
                 )
                 return .object(block)
-            case .reasoningFile, .custom, .toolApprovalRequest, .toolApprovalResponse:
+            case let .custom(value, providerMetadata):
+                guard value["kind"]?.stringValue == "anthropic.fallback" else { return nil }
+                let metadata = providerMetadata["anthropic"]
+                guard let metadata, let marker = anthropicFallbackMetadata(metadata) else {
+                    warnings.append(AIWarning(type: "other", message: "anthropic fallback metadata must include from.model and to.model"))
+                    return nil
+                }
+                return marker
+            case .reasoningFile, .toolApprovalRequest, .toolApprovalResponse:
                 return .object(["type": .string("text"), "text": .string("")])
             }
         }
@@ -1369,7 +1384,7 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
         cacheBreakpointCount: inout Int,
         warnings: inout [AIWarning]
     ) {
-        guard let cacheControl else { return }
+        guard let cacheControl, block["type"]?.stringValue != "fallback" else { return }
         if block["type"]?.stringValue == "thinking" {
             warnings.append(AIWarning(
                 type: "unsupported",
@@ -1934,13 +1949,44 @@ private func moveAnthropicToolUseBlocksToEnd(_ content: [JSONValue]) -> [JSONVal
     var nonToolUseBlocks: [JSONValue] = []
     var toolUseBlocks: [JSONValue] = []
     for block in content {
-        if block["type"]?.stringValue == "tool_use" {
+        if ["thinking", "redacted_thinking", "fallback"].contains(block["type"]?.stringValue ?? "") {
+            nonToolUseBlocks.append(contentsOf: toolUseBlocks)
+            toolUseBlocks.removeAll(keepingCapacity: true)
+            nonToolUseBlocks.append(block)
+        } else if block["type"]?.stringValue == "tool_use" {
             toolUseBlocks.append(block)
         } else {
             nonToolUseBlocks.append(block)
         }
     }
     return nonToolUseBlocks + toolUseBlocks
+}
+
+private func anthropicNormalizeHistoricalCallers(in conversation: inout [JSONValue], before lastUserMessageIndex: Int, warnings: inout [AIWarning]) {
+    guard lastUserMessageIndex > 0 else { return }
+    let codeExecutionIDs = Set(conversation.filter { $0["role"]?.stringValue == "assistant" }.flatMap {
+        ($0["content"]?.arrayValue ?? []).compactMap { block -> String? in
+            guard block["type"]?.stringValue == "server_tool_use", block["name"]?.stringValue == "code_execution" else { return nil }
+            return block["id"]?.stringValue
+        }
+    })
+    var warned: Set<String> = []
+    for index in 0..<lastUserMessageIndex where conversation[index]["role"]?.stringValue == "assistant" {
+        guard var message = conversation[index].objectValue, var content = message["content"]?.arrayValue else { continue }
+        for partIndex in content.indices {
+            guard var block = content[partIndex].objectValue, let caller = block["caller"],
+                  caller["type"]?.stringValue != "direct", let sourceID = caller["tool_id"]?.stringValue,
+                  !codeExecutionIDs.contains(sourceID) else { continue }
+            block.removeValue(forKey: "caller")
+            content[partIndex] = .object(block)
+            let id = block["id"]?.stringValue ?? block["tool_use_id"]?.stringValue ?? ""
+            if warned.insert(id).inserted {
+                warnings.append(AIWarning(type: "other", message: "Omitted caller metadata for tool \(id) because source code execution tool \(sourceID) is missing from the conversation history."))
+            }
+        }
+        message["content"] = .array(content)
+        conversation[index] = .object(message)
+    }
 }
 
 func amazonBedrockThinkingBindingBody(_ body: [String: JSONValue]) -> [String: JSONValue] {
@@ -1991,6 +2037,7 @@ public final class AmazonBedrockAnthropicLanguageModel: LanguageModel, @unchecke
         let body = amazonBedrockThinkingBindingBody(amazonBedrockAnthropicBody(prepared.body, betas: prepared.betas))
         let response = try await config.sendJSONResponse(path: "/model/\(bedrockEncodeModelID(modelID))/invoke", body: .object(body), headers: request.headers, abortSignal: request.abortSignal)
         let raw = response.json
+        try anthropicValidateFallbackContent(raw["content"], providerID: providerID)
         let generatedContent = anthropicGeneratedContent(
             from: raw["content"],
             providerID: providerID,
@@ -2122,6 +2169,7 @@ public final class AmazonBedrockAnthropicLanguageModel: LanguageModel, @unchecke
                                 item = event
                             }
                             let raw = item.rawValue
+                            try anthropicValidateFallbackEvent(raw, providerID: providerID)
                             if request.includeRawChunks {
                                 continuation.yield(.raw(raw))
                             }

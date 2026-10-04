@@ -7,18 +7,33 @@ public final class AzureOpenAIProvider: AIProvider, @unchecked Sendable {
     public let supportedCapabilities: Set<ModelCapability> = [.language, .completion, .embedding, .image, .transcription, .speech]
     private let provider: OpenAICompatibleProvider
     private let config: ModelHTTPConfig
+    private let audioConfig: AzureAudioConfig
 
-    public init(
+    public convenience init(
         resourceName: String? = nil,
         apiVersion: String = "v1",
         useDeploymentBasedURLs: Bool = false,
         tokenProvider: AzureOpenAITokenProvider? = nil,
         settings: ProviderSettings = ProviderSettings()
     ) throws {
+        try self.init(resourceName: resourceName, apiVersion: apiVersion, useDeploymentBasedURLs: useDeploymentBasedURLs, tokenProvider: tokenProvider, settings: settings, audioSettings: AzureOpenAIAudioSettings())
+    }
+
+    public init(
+        resourceName: String? = nil,
+        apiVersion: String = "v1",
+        useDeploymentBasedURLs: Bool = false,
+        tokenProvider: AzureOpenAITokenProvider? = nil,
+        settings: ProviderSettings = ProviderSettings(),
+        audioSettings: AzureOpenAIAudioSettings
+    ) throws {
         if settings.apiKey != nil, tokenProvider != nil {
             throw AIError.invalidArgument(argument: "apiKey/tokenProvider", message: "Both apiKey and tokenProvider were provided. Please use only one authentication method.")
         }
         let resolvedResourceName = resourceName ?? ProcessInfo.processInfo.environment["AZURE_RESOURCE_NAME"]
+        if settings.baseURL == nil, let resolvedResourceName {
+            try validateHostnamePart(resolvedResourceName, argument: "resourceName")
+        }
         let basePrefix = settings.baseURL ?? resolvedResourceName.map { "https://\($0).openai.azure.com/openai" }
         guard let basePrefix else {
             throw AIError.invalidURL("Azure requires ProviderSettings.baseURL or AZURE_RESOURCE_NAME/resourceName.")
@@ -31,7 +46,7 @@ public final class AzureOpenAIProvider: AIProvider, @unchecked Sendable {
             }
             headers["api-key"] = headers["api-key"] ?? key
         }
-        headers = withUserAgentSuffix(headers, "ai-sdk/azure/4.0.82")
+        headers = withUserAgentSuffix(headers, "ai-sdk-azure/4.0.90")
         let baseURL = withoutTrailingSlash(basePrefix)
         let baseURLInfo = try azureOpenAIBaseURLInfo(settings.baseURL)
         let transport = tokenProvider.map { AzureOpenAITokenProviderTransport(base: settings.transport, tokenProvider: $0) } ?? settings.transport
@@ -56,6 +71,7 @@ public final class AzureOpenAIProvider: AIProvider, @unchecked Sendable {
             return url
         })
         self.config = config
+        audioConfig = AzureAudioConfig(resourceName: resolvedResourceName, settings: audioSettings, apiKey: settings.apiKey ?? environmentValue(["AZURE_API_KEY"]), headers: settings.headers, transport: transport, tokenProvider: tokenProvider)
         provider = OpenAICompatibleProvider(providerID: providerID, supportedCapabilities: supportedCapabilities, config: config)
     }
 
@@ -76,8 +92,16 @@ public final class AzureOpenAIProvider: AIProvider, @unchecked Sendable {
     public func responses(_ modelID: String) throws -> any LanguageModel { try languageModel(modelID) }
     public func embeddingModel(_ modelID: String) throws -> any EmbeddingModel { try provider.embeddingModel(modelID) }
     public func imageModel(_ modelID: String) throws -> any ImageModel { try provider.imageModel(modelID) }
-    public func transcriptionModel(_ modelID: String) throws -> any TranscriptionModel { try provider.transcriptionModel(modelID) }
-    public func speechModel(_ modelID: String) throws -> any SpeechModel { try provider.speechModel(modelID) }
+    public func transcriptionModel(_ modelID: String) throws -> any TranscriptionModel {
+        AzureTranscriptionModel(modelID: modelID, openAI: try provider.transcriptionModel(modelID), config: audioConfig)
+    }
+    public func streamingTranscriptionModel(_ modelID: String) throws -> any StreamingTranscriptionModel {
+        AzureTranscriptionModel(modelID: modelID, openAI: try provider.transcriptionModel(modelID), config: audioConfig)
+    }
+
+    public func speechModel(_ modelID: String) throws -> any SpeechModel {
+        AzureSpeechModel(modelID: modelID, openAI: try provider.speechModel(modelID), config: audioConfig)
+    }
     public func videoModel(_ modelID: String) throws -> any VideoModel { try provider.videoModel(modelID) }
     public func rerankingModel(_ modelID: String) throws -> any RerankingModel { try provider.rerankingModel(modelID) }
 
