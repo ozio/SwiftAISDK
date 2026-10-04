@@ -59,6 +59,7 @@ source and behavior review.
 | `@ai-sdk/replicate` | `3.0.54` | `AIProviders.replicate`, `ReplicateImageModel`, `ReplicateVideoModel`, `ReplicateProviderTests.swift` |
 | `@ai-sdk/revai` | `3.0.53` | `AIProviders.revAI`, `RevAITranscriptionModel`, `RevAIProviderTests.swift` |
 | `@ai-sdk/togetherai` | `3.0.63` | `AIProviders.togetherAI`, `TogetherAIImageModel`, `TogetherAIRerankingModel`, `TogetherAIProviderTests.swift` |
+| `@ai-sdk/topaz` | `3.0.0` | `AIProviders.topaz`, `TopazImageModel`, `TopazVideoModel`, `TopazProviderTests.swift` |
 | `@ai-sdk/typesafe-ai` | `3.0.12` | `AIProviders.typeSafeAI`, `TypeSafeAIProvider`, `TypeSafeAIEvaluationModel`, `TypesafeAIProviderTests.swift` |
 | `@ai-sdk/vercel` | `3.0.30` | `AIProviders.vercel`, `VercelProvider`, `ProviderRegistryVercelTests.swift` |
 | `@ai-sdk/voyage` | `2.0.53` | `AIProviders.voyage`, `VoyageEmbeddingModel`, `VoyageRerankingModel`, `VoyageProviderOptionSchemaTests.swift` |

@@ -5,14 +5,14 @@ Use it as a review checklist before porting behavior into SwiftAISDK; do not cop
 
 ## Snapshot
 
-- Generated at: 2026-10-04T02:06:19.240Z
+- Generated at: 2026-10-04T05:13:45.827Z
 - Upstream ref: `main`
 - Upstream commit: [`15f1a4d0531a`](https://github.com/vercel/ai/tree/15f1a4d0531ac641a4a4d9cc602c0536c1906834)
 - Commit line: `15f1a4d0531ac641a4a4d9cc602c0536c1906834 2026-10-03T22:29:15+02:00 chore(docs): update Geistdocs to 2.7.9 (#21987)`
 - Total upstream test/spec files: 976
 - Package/example groups with tests: 82
-- Groups tracked by SwiftAISDK ledger/core snapshot: 50
-- Groups not tracked locally: 32
+- Groups tracked by SwiftAISDK ledger/core snapshot: 51
+- Groups not tracked locally: 31
 
 ## Maintenance Plan
 
@@ -73,6 +73,7 @@ Use it as a review checklist before porting behavior into SwiftAISDK; do not cop
 | `replicate` | `@ai-sdk/replicate` | `3.0.54` | provider | 3 | AIProviders.replicate, ReplicateImageModel, ReplicateVideoModel, ReplicateProviderTests.swift |
 | `revai` | `@ai-sdk/revai` | `3.0.53` | provider | 2 | AIProviders.revAI, RevAITranscriptionModel, RevAIProviderTests.swift |
 | `togetherai` | `@ai-sdk/togetherai` | `3.0.63` | provider | 3 | AIProviders.togetherAI, TogetherAIImageModel, TogetherAIRerankingModel, TogetherAIProviderTests.swift |
+| `topaz` | `@ai-sdk/topaz` | `3.0.0` | provider | 3 | AIProviders.topaz, TopazImageModel, TopazVideoModel, TopazProviderTests.swift |
 | `typesafe-ai` | `@ai-sdk/typesafe-ai` | `3.0.12` | provider | 2 | AIProviders.typeSafeAI, TypeSafeAIProvider, TypeSafeAIEvaluationModel, TypesafeAIProviderTests.swift |
 | `vercel` | `@ai-sdk/vercel` | `3.0.30` | provider | 0 | AIProviders.vercel, VercelProvider, ProviderRegistryVercelTests.swift |
 | `voyage` | `@ai-sdk/voyage` | `2.0.53` | provider | 3 | AIProviders.voyage, VoyageEmbeddingModel, VoyageRerankingModel, VoyageProviderOptionSchemaTests.swift |
@@ -112,7 +113,6 @@ These are visible in the upstream monorepo but are not currently tracked in the 
 | `svelte` | 3 |
 | `test-server` | 1 |
 | `tools` | 2 |
-| `topaz` | 3 |
 | `tui` | 9 |
 | `vue` | 4 |
 | `workflow` | 16 |
@@ -1259,7 +1259,7 @@ These are visible in the upstream monorepo but are not currently tracked in the 
 - [`tools/integration-tests/src/google-vertex.integration.test.ts`](https://github.com/vercel/ai/blob/15f1a4d0531ac641a4a4d9cc602c0536c1906834/tools/integration-tests/src/google-vertex.integration.test.ts)
 - [`tools/integration-tests/src/open-responses.integration.test.ts`](https://github.com/vercel/ai/blob/15f1a4d0531ac641a4a4d9cc602c0536c1906834/tools/integration-tests/src/open-responses.integration.test.ts)
 
-### `topaz`
+### `topaz (@ai-sdk/topaz@3.0.0)`
 
 - [`packages/topaz/src/topaz-image-model.test.ts`](https://github.com/vercel/ai/blob/15f1a4d0531ac641a4a4d9cc602c0536c1906834/packages/topaz/src/topaz-image-model.test.ts)
 - [`packages/topaz/src/topaz-provider.test.ts`](https://github.com/vercel/ai/blob/15f1a4d0531ac641a4a4d9cc602c0536c1906834/packages/topaz/src/topaz-provider.test.ts)

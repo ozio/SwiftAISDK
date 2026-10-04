@@ -16,7 +16,7 @@ Source URL: /components/providers/
 | Instance Property | 176 |
 | Structure | 22 |
 | Type Alias | 4 |
-| Type Method | 78 |
+| Type Method | 79 |
 | Type Property | 3 |
 
 ## Public symbols
@@ -634,6 +634,7 @@ Source URL: /components/providers/
 | Type Method | `rows(upstreamPackage:)` | `static func rows(upstreamPackage: String) -> [AIProviderCapabilityRow]` | [Sources/SwiftAISDK/Providers/ProviderCapabilityMatrix.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/ProviderCapabilityMatrix.swift) |
 | Type Method | `set(_:)` | `static func set(_ provider: (any AIProvider)?)` | [Sources/SwiftAISDK/Providers/CustomProvider.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/CustomProvider.swift) |
 | Type Method | `togetherAI(settings:)` | `static func togetherAI(settings: ProviderSettings = ProviderSettings()) throws -> OpenAICompatibleProvider` | [Sources/SwiftAISDK/Providers/ProviderRegistry.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/ProviderRegistry.swift) |
+| Type Method | `topaz(settings:)` | `static func topaz(settings: ProviderSettings = ProviderSettings()) throws -> OpenAICompatibleProvider` | [Sources/SwiftAISDK/Providers/ProviderRegistry.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/ProviderRegistry.swift) |
 | Type Method | `typeSafeAI(settings:)` | `static func typeSafeAI(settings: ProviderSettings = ProviderSettings()) -> TypeSafeAIProvider` | [Sources/SwiftAISDK/Providers/ProviderRegistry.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/ProviderRegistry.swift) |
 | Type Method | `vercel(settings:)` | `static func vercel(settings: ProviderSettings = ProviderSettings()) throws -> VercelProvider` | [Sources/SwiftAISDK/Providers/ProviderRegistry.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/ProviderRegistry.swift) |
 | Type Method | `voyage(settings:)` | `static func voyage(settings: ProviderSettings = ProviderSettings()) throws -> OpenAICompatibleProvider` | [Sources/SwiftAISDK/Providers/ProviderRegistry.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/ProviderRegistry.swift) |

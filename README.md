@@ -354,7 +354,13 @@ let status = try await AI.getVideoStatus(
 Provider factories live under `AIProviders`, including OpenAI, Azure,
 Anthropic, Google, Google Vertex, Gateway, xAI, Mistral, Groq, Cohere, Voyage,
 MiniMax, Bedrock, Replicate, fal, Fish Audio, GMI Cloud, Deepgram, ElevenLabs,
-Cartesia, and other official `@ai-sdk/*` provider packages.
+Cartesia, Topaz, and other official `@ai-sdk/*` provider packages.
+
+`AIProviders.topaz()` reads `TOPAZ_API_KEY` and enhances existing media:
+`image("wonder-3.5")` accepts an image file or URL; `video("proteus")` and
+`video("starlight-precise-2.6")` expose resumable start/status operations and
+work with `AI.generateVideo`. See the [Topaz guide](https://ozio.github.io/SwiftAISDK/providers/topaz/)
+for output dimensions, source metadata, filters, polling and credits.
 
 MiniMax uses its Anthropic-compatible Messages endpoint and reads
 `MINIMAX_API_KEY` by default. Adaptive thinking is selected through the

@@ -1,0 +1,120 @@
+## Enhance an image
+
+Topaz improves existing images and videos. Set `TOPAZ_API_KEY` or pass
+`ProviderSettings(apiKey:)`. `baseURL`, custom headers and `transport` support
+proxies and testing. Credentials are resolved when the Swift factory is created.
+
+```swift
+import SwiftAISDK
+
+let topaz = try AIProviders.topaz()
+let image = try await AI.generateImage(
+    model: topaz.image("wonder-3.5"),
+    request: ImageGenerationRequest(
+        prompt: "",
+        size: "4000x3000",
+        files: [ImageInputFile(url: "https://example.com/input.png")],
+        providerOptions: ["topaz": [
+            "enhancementStrength": "medium",
+            "outputFormat": "png"
+        ]]
+    )
+)
+// image.base64Images contains the downloaded result; image.urls retains its URL.
+// image.providerMetadata["topaz"]?["images"]?[0] contains processId and credits.
+```
+
+Use `ImageInputFile(data:mediaType:)` for local bytes. URL inputs are passed to
+Topaz directly. `wonder-3.5` maps to `Wonder 3.5`; raw or future model IDs are
+forwarded unchanged. One input image is processed per call. An empty `prompt`
+represents no text prompt in Swift. Nonempty prompts, aspect ratio, seed, masks,
+extra input files and a count above one produce warnings.
+
+Image options under `providerOptions["topaz"]` include:
+
+| Options | Behavior |
+| --- | --- |
+| `outputWidth`, `outputHeight` | Integers from 1 to 32000; each overrides the corresponding dimension in `size`. |
+| `outputFormat`, `cropToFill` | `jpeg`, `jpg`, `png`, `tiff` or `tif`; optional Boolean cropping. |
+| `enhancementStrength` | `low`, `medium` or `high`. |
+| `grain`, `grainDensity`, `grainModel`, `grainSize`, `grainStrength` | Grain Boolean; density/strength 0–1; `silver`, `gaussian` or `grey`; size 1–5. |
+| `inputWidth`, `inputHeight` | Optional positive integer dimensions; Topaz otherwise infers them. |
+| `webhookUrl` | Forwards an image job notification URL; this call still polls for completion. |
+| `pollIntervalMillis`, `pollTimeoutMillis` | Positive integer durations; defaults are 2000 ms and 600000 ms. |
+
+Image polling aborts on caller cancellation or timeout and attempts to cancel
+the abandoned Topaz job. Failed or already cancelled jobs produce an error.
+Completed metadata contains `processId` and any reported `credits`, `width`,
+`height` and `format`. The response headers come from the downloaded image.
+
+## Enhance a video
+
+```swift
+let video = try await AI.generateVideo(
+    model: topaz.video("proteus"),
+    request: VideoGenerationRequest(
+        prompt: "",
+        inputReferences: [
+            ImageInputFile(url: "https://example.com/input.mp4", mediaType: "video/mp4")
+        ],
+        resolution: "3840x2160",
+        providerOptions: ["topaz": ["auto": "Auto"]]
+    ),
+    poll: VideoGenerationPollOptions(
+        intervalMilliseconds: 5_000,
+        timeoutMilliseconds: 600_000
+    )
+)
+// video.urls contains the completed download URL; mediaType describes its container.
+```
+
+`proteus` maps to `prob-4`; `starlight-precise-2.6` maps to `slp-2.6`.
+Raw Topaz model IDs also work. Videos use `/video/express`: Topaz fetches a URL
+input itself, or the SDK uploads supplied bytes to the returned presigned URL.
+Failed uploads trigger best-effort job cancellation. API keys and custom headers
+are withheld from the upload URL and from image downloads on other origins.
+
+Set `resolution` or `output.width`/`output.height` unless source dimensions are
+supplied. Optional `source` metadata is all-or-nothing: `width`, `height`,
+`duration` and `frameRate` must all be present. `frameCount` defaults to the
+rounded product of duration and frame rate; specify it for variable-frame-rate
+input. Starlight requires source metadata at the Topaz API. The SDK does not
+inspect video bytes. `source.container` can be set alone; otherwise it is inferred
+from the media type or URL extension.
+
+`output` options override the corresponding `resolution`/`fps` values and source
+defaults. They include width, height, frame rate, audio codec/bitrate/transfer,
+video encoder/profile/bitrate, dynamic compression, crop and container. Audio
+defaults to `Copy` with `AAC`; `audioTransfer: "None"` omits the default codec.
+`ProRes` forces `mov`; `AV1` and `VP9` force `mp4`.
+
+Proteus settings include `videoType`, `auto`, `fieldOrder`, `focusFixLevel`,
+`compression`, `details`, `prenoise`, `noise`, `halo`, `preblur`, `blur`, grain
+controls and `recoverOriginalDetailValue`. Starlight settings include `sharpness`
+(1–5), `videoBitDepth`, `videoCodec`, `videoProfile` and `watermark`. Use `filter`
+for additional model settings or to override a typed field, and `additionalFilters`
+for interpolation or other filters. These fields all belong under `topaz`.
+
+## Persist and resume a video operation
+
+Use `AI.startVideo(model:request:)` to submit without waiting. Persist its
+JSON-serializable `operation` (`requestId` and `outputContainer`) and call
+`AI.getVideoStatus(model:operation:)` later. Status is `.pending`, `.completed`
+or `.failed`. Unknown upstream states remain pending. `AI.generateVideo` selects
+this asynchronous path automatically; calling the model's unary method directly
+is unsupported. Topaz has no video webhook adapter in the upstream package.
+
+Start metadata reports `requestId` and optional `estimatedCredits`. Completed
+metadata reports `credits` as the lower bound of the final estimate, plus the
+estimate, output size and expiry when provided. An initial estimate is not a
+billed amount. Failed status includes Topaz's message and error code; HTTP errors
+retain the original body and structured validation details.
+
+Stopping shared video polling does not cancel a running Topaz video job:
+upstream exposes no public cancel operation. Retain the operation to resume
+polling. Swift task or abort cancellation during image polling and failed video
+uploads have the cleanup behavior described above.
+
+The compile-checked example is `Examples/Sources/EnhanceWithTopaz/main.swift`:
+`swift run --package-path Examples EnhanceWithTopaz image <source-url> 4000x3000`
+or `video <source-url> 3840x2160`. Running it calls the Topaz API.

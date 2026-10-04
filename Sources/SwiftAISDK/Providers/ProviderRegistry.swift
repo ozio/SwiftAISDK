@@ -363,6 +363,21 @@ public enum AIProviders {
         try OpenAICompatibleProvider(providerID: "luma", defaultBaseURL: "https://api.lumalabs.ai", authorization: .bearer(environmentVariables: ["LUMA_API_KEY"]), supportedCapabilities: [.image], settings: settings)
     }
 
+    /// Creates Topaz image and asynchronous video enhancement models.
+    public static func topaz(settings: ProviderSettings = ProviderSettings()) throws -> OpenAICompatibleProvider {
+        var settings = settings
+        settings.apiKey = settings.apiKey ?? (settings.environment ?? ProcessInfo.processInfo.environment)["TOPAZ_API_KEY"]
+        guard settings.apiKey != nil else {
+            throw AIError.missingAPIKey(provider: "topaz", environmentVariables: ["TOPAZ_API_KEY"])
+        }
+        settings.headers = ["accept": "application/json"].mergingHeaders(normalizeHeaders(settings.headers))
+        return try OpenAICompatibleProvider(
+            providerID: "topaz", defaultBaseURL: "https://api.topazlabs.com",
+            authorization: .apiKeyHeader(name: "x-api-key", environmentVariables: ["TOPAZ_API_KEY"]),
+            supportedCapabilities: [.image, .video], settings: settings, userAgentSuffix: "ai-sdk-topaz/3.0.0"
+        )
+    }
+
     public static func klingAI(settings: KlingAIProviderSettings = KlingAIProviderSettings()) throws -> OpenAICompatibleProvider {
         var headers = settings.headers
         var transport = settings.transport

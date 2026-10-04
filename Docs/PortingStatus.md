@@ -64,9 +64,11 @@ their exact published tarballs; per-package decisions are recorded in
 
 The 2026-10-04 pass audits all 52 tracked packages (50 changed, two current), implements image capability discovery, native audio usage/telemetry, configurable tool search, safe stream correlation/smoothing and current Azure/Anthropic/Bedrock/OpenAI/Gateway behavior. Full package decisions and exact old/latest versions are in `UpstreamPackageDiffAudit.md`.
 
-Fresh search plus exact prefix enumeration finds 88 scoped packages; **Topaz 3.0.0 is a new, unimplemented image/video enhancement provider**. Its port is the recommended next provider vertical. The empty SpaceXAI reservation and framework/harness packages remain outside automatic provider implementation.
+Fresh search plus exact prefix enumeration finds 88 scoped packages. A separately authorized follow-up now ports **Topaz 3.0.0** for Wonder 3.5 image enhancement and Proteus/Starlight video enhancement, bringing the inventory to 53 tracked packages. No known published model provider remains unported. The empty SpaceXAI reservation and framework/harness packages remain outside provider coverage. See the Topaz follow-up in `UpstreamPackageDiffAudit.md` for source, fixture and verification evidence.
 
-Existing call/initializer/iterator signatures are retained; newly exposed APIs and the MAI audio family warrant a minor SwiftPM release. Remaining shared/native gaps are explicitly listed in the package audit and Active Product Gaps below. Final verification passed: 54 focused parser/provider/core regressions; 3,008 tests in 22 suites in both full parallel and serial runs; the Examples build; docs dependency installation; zero docs diagnostics and a 93-page site build; 52 current registry baselines; and whitespace validation. Exact commands are recorded in the package audit. A hosted-only video polling fixture failure (153 ms against a 150 ms wall-clock bound) prompted a maintenance repair that verifies cancellation and unfinished status directly. Runtime/provider behavior is unchanged; the original release tag is preserved and the follow-up uses a patch tag.
+The Topaz follow-up passed 38 focused tests, all 3,042 tests in 23 suites in both parallel and serial modes, the example build, an iOS 15 Simulator cross-build, docs checks with zero diagnostics, and a 94-page docs build. All 53 tracked packages are current. Its new provider surface warrants a minor release from 2.1.1.
+
+The preceding 2.1.0 weekly release added public APIs and the MAI audio family while retaining existing call, initializer and iterator signatures. It passed 54 focused regressions, 3,008 tests in 22 suites, the Examples build and a 93-page docs build. The 2.1.1 maintenance release repaired a hosted-only polling fixture failure (153 ms against a 150 ms wall-clock bound) by checking cancellation and unfinished status directly, without changing library behavior. Both published tags are preserved. Remaining shared/native gaps are listed in the package audit and Active Product Gaps below.
 
 ### Earlier weekly passes
 
@@ -354,7 +356,6 @@ one of these is true:
 
 | Priority | Gap | Next action |
 | --- | --- | --- |
-| P1 | Newly discovered `@ai-sdk/topaz@3.0.0` has image/video enhancement providers and is not implemented. | Port its enhancement requests, options, job lifecycle, results/errors and fixtures as a separate provider vertical. |
 | P1 | Google/Vertex Gemini transcription and Open Responses extension codecs remain absent native adapters. | Design and port each complete request/stream/replay surface before advertising parity. |
 | P0 | Completion evidence can drift as npm packages and upstream tests change. | Before release, rerun package discovery, regenerate upstream inventory, compare ledgers, run full `swift test`, and record the audit. |
 | P0 | Live verification is representative, not exhaustive. | Add opt-in live smoke only for distinct transport families or concrete production risks. Keep it disabled by default. |

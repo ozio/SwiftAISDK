@@ -143,6 +143,8 @@ function yamlString(value) {
 
 function providerGuide(providerID) {
   switch (providerID) {
+    case 'topaz':
+      return '\n' + readFileSync(join(docsSiteRoot, 'scripts/provider-guides/topaz.md'), 'utf8') + '\n';
     case 'perplexity':
       return [
         '',

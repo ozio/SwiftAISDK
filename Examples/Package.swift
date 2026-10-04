@@ -12,6 +12,10 @@ let package = Package(
     ],
     targets: [
         .executableTarget(
+            name: "EnhanceWithTopaz",
+            dependencies: [.product(name: "SwiftAISDK", package: "SwiftAISDK")]
+        ),
+        .executableTarget(
             name: "GenerateText",
             dependencies: [
                 .product(name: "SwiftAISDK", package: "SwiftAISDK"),

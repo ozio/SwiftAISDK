@@ -54,6 +54,7 @@ import Testing
         "@ai-sdk/replicate",
         "@ai-sdk/revai",
         "@ai-sdk/togetherai",
+        "@ai-sdk/topaz",
         "@ai-sdk/typesafe-ai",
         "@ai-sdk/vercel",
         "@ai-sdk/voyage",
@@ -92,6 +93,11 @@ import Testing
     #expect(miniMaxRow.supports(.language))
     #expect(miniMaxRow.supports(.video))
     #expect(!miniMaxRow.supports(.embedding))
+
+    let topaz = try AIProviders.topaz(settings: ProviderSettings(apiKey: "topaz-key"))
+    let topazRow = try #require(AIProviderCapabilities.row(providerID: "topaz"))
+    #expect(topazRow.supportedCapabilities == topaz.supportedCapabilities)
+    #expect(topazRow.supportedCapabilities == [.image, .video])
 
     let voyage = try AIProviders.voyage(settings: ProviderSettings(apiKey: "voyage-key"))
     let voyageRow = try #require(AIProviderCapabilities.row(providerID: "voyage"))

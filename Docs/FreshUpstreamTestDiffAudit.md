@@ -20,9 +20,9 @@ Keep executable names ending in `.test.ts`, `.test.tsx`, `.test.mts`,
 `.spec.ts`, `.spec.tsx`, `.spec.mts`; separately retain paths containing `test-d`.
 `UpstreamPackageDiffAudit.md` contains each package's exact version and source
 disposition. Native translations are in the four `Weekly*20261004Tests.swift`
-files, shared tracker tests and existing affected provider/core suites.
+files, shared tracker tests, TopazProviderTests and existing affected provider/core suites.
 
-Dispositions: 68 out-of-scope, 102 ported, 11 covered, 7 partial, 6 deferred, 22 identity-only, 3 announced.
+Dispositions: 68 out-of-scope, 105 ported, 11 covered, 7 partial, 6 deferred, 22 identity-only.
 
 ## Executable paths
 
@@ -218,9 +218,9 @@ Dispositions: 68 out-of-scope, 102 ported, 11 covered, 7 partial, 6 deferred, 22
 | `M` | `packages/revai/src/revai-transcription-model.test.ts` | `identity-only` | Exact headers/model-ID fixtures reviewed; version/prefix assertions updated, existing provider builder/parser/stream coverage retained. |
 | `M` | `packages/svelte/src/chat.svelte.test.ts` | `out-of-scope` | Framework/harness/workflow/tooling or React surface absent from this Swift provider package. |
 | `M` | `packages/togetherai/src/togetherai-image-model.test.ts` | `ported` | Published provider behavior translated in WeeklyProviders/WeeklyAzureAudio/WeeklyImageAndCore tests plus affected existing provider suites. |
-| `A` | `packages/topaz/src/topaz-image-model.test.ts` | `announced` | New untracked image/video enhancement provider; three fixtures reviewed, no automatic implementation. |
-| `A` | `packages/topaz/src/topaz-provider.test.ts` | `announced` | New untracked image/video enhancement provider; three fixtures reviewed, no automatic implementation. |
-| `A` | `packages/topaz/src/topaz-video-model.test.ts` | `announced` | New untracked image/video enhancement provider; three fixtures reviewed, no automatic implementation. |
+| `A` | `packages/topaz/src/topaz-image-model.test.ts` | `ported` | Authorized follow-up: TopazProviderTests covers provider/image/video published behavior; JavaScript workflow serializer assertions are out of scope. |
+| `A` | `packages/topaz/src/topaz-provider.test.ts` | `ported` | Authorized follow-up: TopazProviderTests covers provider/image/video published behavior; JavaScript workflow serializer assertions are out of scope. |
+| `A` | `packages/topaz/src/topaz-video-model.test.ts` | `ported` | Authorized follow-up: TopazProviderTests covers provider/image/video published behavior; JavaScript workflow serializer assertions are out of scope. |
 | `M` | `packages/tui/src/tui/layout.test.ts` | `out-of-scope` | Framework/harness/workflow/tooling or React surface absent from this Swift provider package. |
 | `M` | `packages/tui/src/tui/markdown.test.ts` | `out-of-scope` | Framework/harness/workflow/tooling or React surface absent from this Swift provider package. |
 | `A` | `packages/tui/src/tui/sanitize-terminal-text.test.ts` | `out-of-scope` | Framework/harness/workflow/tooling or React surface absent from this Swift provider package. |

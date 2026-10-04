@@ -406,6 +406,9 @@ public final class OpenAICompatibleProvider: AIProvider, AIEvaluationProvider, @
         guard supportedCapabilities.contains(.image) else {
             throw AIError.unsupportedModel(provider: providerID, capability: .image, modelID: modelID)
         }
+        if providerID == "topaz" {
+            return TopazImageModel(modelID: modelID, config: config)
+        }
         if providerID == "replicate" {
             return ReplicateImageModel(modelID: modelID, config: config)
         }
@@ -577,6 +580,9 @@ public final class OpenAICompatibleProvider: AIProvider, AIEvaluationProvider, @
     public func videoModel(_ modelID: String) throws -> any VideoModel {
         guard supportedCapabilities.contains(.video) else {
             throw AIError.unsupportedModel(provider: providerID, capability: .video, modelID: modelID)
+        }
+        if providerID == "topaz" {
+            return TopazVideoModel(modelID: modelID, config: config)
         }
         if providerID == "replicate" {
             return ReplicateVideoModel(modelID: modelID, config: config)

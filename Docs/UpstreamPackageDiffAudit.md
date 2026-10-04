@@ -21,6 +21,43 @@ Status meanings:
   provider-facing Swift package does not expose.
 - `current`: the tracked package has no published version drift.
 
+
+## 2026-10-04 Topaz follow-up
+
+The user explicitly requested the newly discovered provider and investigation of a reported build failure. The current branch was clean at `481c18d323e9b974b7c498c3061b273223d3e625` (`2.1.1`). Fresh `git fetch --prune --tags origin` and GitHub Actions readback showed the latest run `37173559575` passed tests, build and deployment. `swift build` also passed before this port. The earlier failed run `37172432374` was the scheduler-sensitive timeout fixture already repaired in 2.1.1, as documented below; no additional runtime build defect was reproduced.
+
+| Package | Previous reference | Published latest | Decision | Swift evidence |
+| --- | --- | --- | --- | --- |
+| `@ai-sdk/topaz` | Announced, unimplemented | `3.0.0` | Ported in full for the native image/video surface | `TopazShared.swift`, `TopazImageModel.swift`, `TopazVideoModel.swift`, provider registry and `TopazProviderTests.swift` |
+
+The package was downloaded again from the npm registry and verified against its SHA-512 integrity: `VbkBf7Ttd4Yz/WmKaZy0B7/M6LhmoEoJQLEmdsshINAwntY/zTjtJYam2zQ+LYCZ6rpRS5lmY/SR0UPMsrG4+g==`. Provider/config/error source, both model implementations, all option schemas, model-ID mappings, declarations and published documentation were compared. A fresh upstream fetch retained commit `15f1a4d0531ac641a4a4d9cc602c0536c1906834`.
+
+- **Image:** Wonder model mapping; multipart bytes and `source_url`; snake_case request fields and camelCase model settings; output-dimension precedence; numeric/enum validation; file/mask capabilities; unsupported-option warnings; submit/status/download parsing; unknown-state polling; image credit/dimension metadata; cancellation after abort or timeout. The native deadline also interrupts an in-flight status call. Cross-origin image downloads strip credentials and validate URLs/redirects.
+- **Video:** Proteus/Starlight and raw model IDs; express jobs; byte uploads without API credentials and URL source forwarding; optional complete source metadata and inferred frame count/container; output/encoder/audio defaults and precedence; filter override and additional filters; resumable start/status operation JSON; terminal/unknown states; settled minimum estimated credits, output-size/expiry metadata; structured API validation errors; best-effort cleanup on failed start/upload. The shared facade selects async-only models automatically.
+- **Native choices:** `Data` represents file bytes; options use the existing `JSONValue` provider namespace. Credentials resolve at factory creation, consistent with other `OpenAICompatibleProvider` factories. Empty required Swift image prompts mean no prompt. Upload redirects are rejected rather than allowing an unvalidated second PUT. Existing signatures and providers are preserved.
+- **Boundaries:** Topaz does not expose text generation, embeddings, unary video, video webhooks or a public video cancel operation in the published package. Stopping video polling does not cancel the remote job; callers can persist and resume its operation. The two JavaScript workflow serialization checks and restored-JavaScript-model setup remain out of scope; Swift operation JSON round-trip and configured-header behavior are tested. Live credentialed Topaz calls are not part of this verification.
+
+| Upstream test file | Disposition | Coverage |
+| --- | --- | --- |
+| `packages/topaz/src/topaz-provider.test.ts` | Ported | Factories/aliases, unsupported families, capabilities, key loading, custom base URL/headers/user-agent. |
+| `packages/topaz/src/topaz-image-model.test.ts` | Ported; JS model serializer out of scope | Request fields and bytes/URL inputs, dimensions/options, polling, warnings, failures, missing responses, abort/timeout cleanup and error details. |
+| `packages/topaz/src/topaz-video-model.test.ts` | Ported; JS model serializer out of scope | Express requests, source/output/filter rules, byte uploads/URL sources, container mapping, state/results/credits, missing metadata, errors and upload cleanup. |
+
+Follow-up verification passed on Apple Swift 6.4 (package tools version 6.3):
+
+- `swift test --filter 'TopazProviderTests|providerCapabilityMatrix'`: 38 tests passed, including 34 Topaz tests with parameterized upstream scenarios.
+- `swift test`: 3,042 tests in 23 suites passed.
+- `swift test --no-parallel`: 3,042 tests in 23 suites passed, matching CI execution mode.
+- `swift build --package-path Examples`: all examples, including `EnhanceWithTopaz`, built.
+- `npm ci --prefix docs-site`: 446 packages installed (exit 0).
+- `npm --prefix docs-site run check`: 0 errors, 0 warnings, 0 hints (4 Astro files).
+- `npm --prefix docs-site run build`: 94 pages built.
+- `swift build --build-system native --triple arm64-apple-ios15.0-simulator --sdk "$(xcrun --sdk iphonesimulator --show-sdk-path)" -j 4` with an isolated scratch directory: library compiled for iOS 15 Simulator. SwiftPM emitted its build-system deprecation notice; there were no source diagnostics.
+- `node Scripts/check-upstream-versions.js --all --json`: 53 current, 0 outdated, 0 registry errors. Search discovery found no new provider; fresh exact-prefix enumeration retained all 88 scoped names and digest `9dc17bdfde0352e0ada746e394994d1da533e2290b7c6ed4c9ed81d171860b27`.
+- `git diff --check`: clean.
+
+The new provider is an additive capability and warrants a minor SwiftPM release from 2.1.1. Existing shared deferred surfaces remain listed in the weekly audit below.
+
 ## 2026-10-04 Weekly Audit
 
 Audited 52 tracked packages: 50 changed and LMNT/Vercel stayed current. 19 identity-only, 27 ported, 2 version-only, 2 current, 1 deferred, 1 out-of-scope. Fifty old/latest pairs plus 37 untracked scoped packages produced 137 integrity-verified published tarballs. Upstream test inventory is `vercel/ai@15f1a4d0531ac641a4a4d9cc602c0536c1906834`, with 976 executable test/spec files. Published package source is the behavior authority; the monorepo inventory is the fixture review checklist.
@@ -141,7 +178,7 @@ Each old/latest tarball was downloaded from its exact registry `dist.tarball` an
 
 Fresh npm search returned 72 scoped names; exact registry-prefix enumeration returned 88 (`_all_docs` with `startkey="@ai-sdk/"`, exclusive upper bound `endkey="@ai-sdk0"`). The SHA-256 of sorted names plus a final newline is `9dc17bdfde0352e0ada746e394994d1da533e2290b7c6ed4c9ed81d171860b27`. All 37 untracked names had exact registry metadata and tarballs inspected.
 
-The newly published provider **`@ai-sdk/topaz@3.0.0`** contains image and video enhancement models (TOPAZ_API_KEY / X-API-Key authentication, api.topazlabs.com). It is not auto-ported. Recommended next vertical: enhancement input/options and request builders, image/video results, asynchronous job/error/cancellation behavior, focused fixtures, factories/capability docs and version ledger. Provider detection now recognizes Topaz even though its registry description is empty. `@ai-sdk/spacexai@0.0.0` remains an empty reservation; framework, harness, sandbox, schema, workflow and telemetry packages are not model-provider discoveries.
+The newly published provider **`@ai-sdk/topaz@3.0.0`** contains image and video enhancement models (TOPAZ_API_KEY / X-API-Key authentication, api.topazlabs.com). It was left unimplemented by the discovery pass, then ported in the separately authorized Topaz follow-up recorded above. Provider detection now recognizes Topaz even though its registry description is empty. `@ai-sdk/spacexai@0.0.0` remains an empty reservation; framework, harness, sandbox, schema, workflow and telemetry packages are not model-provider discoveries.
 
 Deferred native/shared boundaries remain resolver-address pinning, Bedrock omitted-versus-empty stopSequences, Google/Vertex Gemini transcription and remaining realtime/WebRTC/translation adapters, explicit UI-step identity and browser rawInput/state/reconnect wire migration, and Open Responses extension codec registry/workflow serialization. Native partial-argument/text replay, data conversion and superseded approvals are implemented without claiming the browser wire surface.
 

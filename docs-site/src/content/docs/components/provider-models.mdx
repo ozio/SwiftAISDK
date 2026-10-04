@@ -8,12 +8,12 @@ description: Public SwiftAISDK APIs for provider models.
 | Symbol kind | Count |
 | --- | --- |
 | Case | 10 |
-| Class | 125 |
+| Class | 127 |
 | Enumeration | 15 |
 | Function | 3 |
 | Initializer | 14 |
-| Instance Method | 222 |
-| Instance Property | 341 |
+| Instance Method | 225 |
+| Instance Property | 350 |
 | Structure | 11 |
 | Type Alias | 3 |
 | Type Method | 97 |
@@ -145,6 +145,8 @@ description: Public SwiftAISDK APIs for provider models.
 | Class | `RevAITranscriptionModel` | `final class RevAITranscriptionModel` | [Sources/SwiftAISDK/Models/RevAIAudioModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/RevAIAudioModels.swift) |
 | Class | `TogetherAIImageModel` | `final class TogetherAIImageModel` | [Sources/SwiftAISDK/Models/TogetherAIModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/TogetherAIModels.swift) |
 | Class | `TogetherAIRerankingModel` | `final class TogetherAIRerankingModel` | [Sources/SwiftAISDK/Models/TogetherAIModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/TogetherAIModels.swift) |
+| Class | `TopazImageModel` | `final class TopazImageModel` | [Sources/SwiftAISDK/Models/TopazImageModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/TopazImageModel.swift) |
+| Class | `TopazVideoModel` | `final class TopazVideoModel` | [Sources/SwiftAISDK/Models/TopazVideoModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/TopazVideoModel.swift) |
 | Class | `TypeSafeAIEvaluationModel` | `final class TypeSafeAIEvaluationModel` | [Sources/SwiftAISDK/Models/TypesafeAIEvaluationModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/TypesafeAIEvaluationModel.swift) |
 | Class | `VoyageEmbeddingModel` | `final class VoyageEmbeddingModel` | [Sources/SwiftAISDK/Models/VoyageModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/VoyageModels.swift) |
 | Class | `VoyageRerankingModel` | `final class VoyageRerankingModel` | [Sources/SwiftAISDK/Models/VoyageModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/VoyageModels.swift) |
@@ -263,6 +265,7 @@ description: Public SwiftAISDK APIs for provider models.
 | Instance Method | `generateImage(_:)` | `func generateImage(_ request: ImageGenerationRequest) async throws -> ImageGenerationResult` | [Sources/SwiftAISDK/Models/QuiverAIModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/QuiverAIModels.swift) |
 | Instance Method | `generateImage(_:)` | `func generateImage(_ request: ImageGenerationRequest) async throws -> ImageGenerationResult` | [Sources/SwiftAISDK/Models/ReplicateMediaModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/ReplicateMediaModels.swift) |
 | Instance Method | `generateImage(_:)` | `func generateImage(_ request: ImageGenerationRequest) async throws -> ImageGenerationResult` | [Sources/SwiftAISDK/Models/TogetherAIModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/TogetherAIModels.swift) |
+| Instance Method | `generateImage(_:)` | `func generateImage(_ request: ImageGenerationRequest) async throws -> ImageGenerationResult` | [Sources/SwiftAISDK/Models/TopazImageModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/TopazImageModel.swift) |
 | Instance Method | `generateImage(_:)` | `func generateImage(_ request: ImageGenerationRequest) async throws -> ImageGenerationResult` | [Sources/SwiftAISDK/Models/XAIModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/XAIModels.swift) |
 | Instance Method | `generateVideo(_:)` | `func generateVideo(_ request: VideoGenerationRequest) async throws -> VideoGenerationResult` | [Sources/SwiftAISDK/Models/AlibabaVideoModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/AlibabaVideoModels.swift) |
 | Instance Method | `generateVideo(_:)` | `func generateVideo(_ request: VideoGenerationRequest) async throws -> VideoGenerationResult` | [Sources/SwiftAISDK/Models/BlackForestLabsVideoModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/BlackForestLabsVideoModel.swift) |
@@ -352,6 +355,7 @@ description: Public SwiftAISDK APIs for provider models.
 | Instance Method | `startVideoGeneration(_:)` | `func startVideoGeneration(_ operationRequest: VideoGenerationOperationStartRequest) async throws -> VideoGenerationOperationStartResult` | [Sources/SwiftAISDK/Models/GatewayMediaModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/GatewayMediaModels.swift) |
 | Instance Method | `startVideoGeneration(_:)` | `func startVideoGeneration(_ operationRequest: VideoGenerationOperationStartRequest) async throws -> VideoGenerationOperationStartResult` | [Sources/SwiftAISDK/Models/KlingAIMediaModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/KlingAIMediaModels.swift) |
 | Instance Method | `startVideoGeneration(_:)` | `func startVideoGeneration(_ operationRequest: VideoGenerationOperationStartRequest) async throws -> VideoGenerationOperationStartResult` | [Sources/SwiftAISDK/Models/MiniMaxVideoModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/MiniMaxVideoModel.swift) |
+| Instance Method | `startVideoGeneration(_:)` | `func startVideoGeneration(_ operationRequest: VideoGenerationOperationStartRequest) async throws -> VideoGenerationOperationStartResult` | [Sources/SwiftAISDK/Models/TopazVideoModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/TopazVideoModel.swift) |
 | Instance Method | `stream(_:)` | `func stream(_ request: LanguageModelRequest) -> AsyncThrowingStream<LanguageStreamPart, Error>` | [Sources/SwiftAISDK/Models/AlibabaModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/AlibabaModels.swift) |
 | Instance Method | `stream(_:)` | `func stream(_ request: LanguageModelRequest) -> AsyncThrowingStream<LanguageStreamPart, Error>` | [Sources/SwiftAISDK/Models/AmazonBedrockLanguageModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/AmazonBedrockLanguageModel.swift) |
 | Instance Method | `stream(_:)` | `func stream(_ request: LanguageModelRequest) -> AsyncThrowingStream<LanguageStreamPart, Error>` | [Sources/SwiftAISDK/Models/AnthropicBatchLanguageModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/AnthropicBatchLanguageModel.swift) |
@@ -411,6 +415,7 @@ description: Public SwiftAISDK APIs for provider models.
 | Instance Method | `videoGenerationStatus(_:)` | `func videoGenerationStatus(_ operationRequest: VideoGenerationOperationStatusRequest) async throws -> VideoGenerationOperationStatusResult` | [Sources/SwiftAISDK/Models/GatewayMediaModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/GatewayMediaModels.swift) |
 | Instance Method | `videoGenerationStatus(_:)` | `func videoGenerationStatus(_ operationRequest: VideoGenerationOperationStatusRequest) async throws -> VideoGenerationOperationStatusResult` | [Sources/SwiftAISDK/Models/KlingAIMediaModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/KlingAIMediaModels.swift) |
 | Instance Method | `videoGenerationStatus(_:)` | `func videoGenerationStatus(_ operationRequest: VideoGenerationOperationStatusRequest) async throws -> VideoGenerationOperationStatusResult` | [Sources/SwiftAISDK/Models/MiniMaxVideoModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/MiniMaxVideoModel.swift) |
+| Instance Method | `videoGenerationStatus(_:)` | `func videoGenerationStatus(_ request: VideoGenerationOperationStatusRequest) async throws -> VideoGenerationOperationStatusResult` | [Sources/SwiftAISDK/Models/TopazVideoModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/TopazVideoModel.swift) |
 | Instance Property | `allowInsecureSSL` | `var allowInsecureSSL: Bool?` | [Sources/SwiftAISDK/Models/GatewayModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/GatewayModels.swift) |
 | Instance Property | `allowRedirects` | `var allowRedirects: Bool?` | [Sources/SwiftAISDK/Models/GatewayModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/GatewayModels.swift) |
 | Instance Property | `apiKey` | `var apiKey: String?` | [Sources/SwiftAISDK/Models/OpenAICompatibleConfig.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/OpenAICompatibleConfig.swift) |
@@ -456,6 +461,7 @@ description: Public SwiftAISDK APIs for provider models.
 | Instance Property | `maxEmbeddingsPerCall` | `var maxEmbeddingsPerCall: Int? { get }` | [Sources/SwiftAISDK/Models/OpenAICompatibleMediaModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/OpenAICompatibleMediaModels.swift) |
 | Instance Property | `maxEmbeddingsPerCall` | `var maxEmbeddingsPerCall: Int? { get }` | [Sources/SwiftAISDK/Models/PerplexityEmbeddingModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/PerplexityEmbeddingModel.swift) |
 | Instance Property | `maxEmbeddingsPerCall` | `var maxEmbeddingsPerCall: Int? { get }` | [Sources/SwiftAISDK/Models/VoyageModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/VoyageModels.swift) |
+| Instance Property | `maxImagesPerCall` | `let maxImagesPerCall: Int` | [Sources/SwiftAISDK/Models/TopazImageModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/TopazImageModel.swift) |
 | Instance Property | `maxInputBytesPerCall` | `var maxInputBytesPerCall: Int? { get }` | [Sources/SwiftAISDK/Models/OpenAICompatibleMediaModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/OpenAICompatibleMediaModels.swift) |
 | Instance Property | `maxRows` | `var maxRows: Int?` | [Sources/SwiftAISDK/Models/GatewayModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/GatewayModels.swift) |
 | Instance Property | `maxVideosPerCall` | `let maxVideosPerCall: Int` | [Sources/SwiftAISDK/Models/ByteDanceMediaModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/ByteDanceMediaModels.swift) |
@@ -463,6 +469,7 @@ description: Public SwiftAISDK APIs for provider models.
 | Instance Property | `maxVideosPerCall` | `let maxVideosPerCall: Int` | [Sources/SwiftAISDK/Models/GatewayMediaModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/GatewayMediaModels.swift) |
 | Instance Property | `maxVideosPerCall` | `let maxVideosPerCall: Int` | [Sources/SwiftAISDK/Models/KlingAIMediaModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/KlingAIMediaModels.swift) |
 | Instance Property | `maxVideosPerCall` | `let maxVideosPerCall: Int` | [Sources/SwiftAISDK/Models/MiniMaxVideoModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/MiniMaxVideoModel.swift) |
+| Instance Property | `maxVideosPerCall` | `let maxVideosPerCall: Int` | [Sources/SwiftAISDK/Models/TopazVideoModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/TopazVideoModel.swift) |
 | Instance Property | `mode` | `var mode: String?` | [Sources/SwiftAISDK/Models/GatewayModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/GatewayModels.swift) |
 | Instance Property | `modelFamily` | `var modelFamily: AmazonBedrockEmbeddingModelFamily?` | [Sources/SwiftAISDK/Models/AmazonBedrockEmbeddingModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/AmazonBedrockEmbeddingModel.swift) |
 | Instance Property | `modelFamily` | `var modelFamily: AmazonBedrockChatModelFamily?` | [Sources/SwiftAISDK/Models/AmazonBedrockModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/AmazonBedrockModels.swift) |
@@ -569,6 +576,8 @@ description: Public SwiftAISDK APIs for provider models.
 | Instance Property | `modelID` | `let modelID: String` | [Sources/SwiftAISDK/Models/RevAIAudioModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/RevAIAudioModels.swift) |
 | Instance Property | `modelID` | `let modelID: String` | [Sources/SwiftAISDK/Models/TogetherAIModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/TogetherAIModels.swift) |
 | Instance Property | `modelID` | `let modelID: String` | [Sources/SwiftAISDK/Models/TogetherAIModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/TogetherAIModels.swift) |
+| Instance Property | `modelID` | `let modelID: String` | [Sources/SwiftAISDK/Models/TopazImageModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/TopazImageModel.swift) |
+| Instance Property | `modelID` | `let modelID: String` | [Sources/SwiftAISDK/Models/TopazVideoModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/TopazVideoModel.swift) |
 | Instance Property | `modelID` | `let modelID: String` | [Sources/SwiftAISDK/Models/TypesafeAIEvaluationModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/TypesafeAIEvaluationModel.swift) |
 | Instance Property | `modelID` | `let modelID: String` | [Sources/SwiftAISDK/Models/VoyageModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/VoyageModels.swift) |
 | Instance Property | `modelID` | `let modelID: String` | [Sources/SwiftAISDK/Models/VoyageModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/VoyageModels.swift) |
@@ -699,6 +708,8 @@ description: Public SwiftAISDK APIs for provider models.
 | Instance Property | `providerID` | `let providerID: String` | [Sources/SwiftAISDK/Models/RevAIAudioModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/RevAIAudioModels.swift) |
 | Instance Property | `providerID` | `let providerID: String` | [Sources/SwiftAISDK/Models/TogetherAIModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/TogetherAIModels.swift) |
 | Instance Property | `providerID` | `let providerID: String` | [Sources/SwiftAISDK/Models/TogetherAIModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/TogetherAIModels.swift) |
+| Instance Property | `providerID` | `let providerID: String` | [Sources/SwiftAISDK/Models/TopazImageModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/TopazImageModel.swift) |
+| Instance Property | `providerID` | `let providerID: String` | [Sources/SwiftAISDK/Models/TopazVideoModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/TopazVideoModel.swift) |
 | Instance Property | `providerID` | `let providerID: String` | [Sources/SwiftAISDK/Models/TypesafeAIEvaluationModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/TypesafeAIEvaluationModel.swift) |
 | Instance Property | `providerID` | `let providerID: String` | [Sources/SwiftAISDK/Models/VoyageModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/VoyageModels.swift) |
 | Instance Property | `providerID` | `let providerID: String` | [Sources/SwiftAISDK/Models/VoyageModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/VoyageModels.swift) |
@@ -742,9 +753,12 @@ description: Public SwiftAISDK APIs for provider models.
 | Instance Property | `supportedURLs` | `let supportedURLs: [String : [AISupportedURLPattern]]` | [Sources/SwiftAISDK/Models/XAIResponsesBatchLanguageModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/XAIResponsesBatchLanguageModel.swift) |
 | Instance Property | `supportedURLs` | `let supportedURLs: [String : [AISupportedURLPattern]]` | [Sources/SwiftAISDK/Models/XAIResponsesBatchLanguageModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/XAIResponsesBatchLanguageModel.swift) |
 | Instance Property | `supportedURLs` | `let supportedURLs: [String : [AISupportedURLPattern]]` | [Sources/SwiftAISDK/Models/ZAILanguageModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/ZAILanguageModel.swift) |
+| Instance Property | `supportsFileInputs` | `let supportsFileInputs: Bool?` | [Sources/SwiftAISDK/Models/TopazImageModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/TopazImageModel.swift) |
+| Instance Property | `supportsMaskInputs` | `let supportsMaskInputs: Bool?` | [Sources/SwiftAISDK/Models/TopazImageModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/TopazImageModel.swift) |
 | Instance Property | `supportsMultiPartToolContent` | `var supportsMultiPartToolContent: Bool` | [Sources/SwiftAISDK/Models/OpenAICompatibleConfig.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/OpenAICompatibleConfig.swift) |
 | Instance Property | `supportsStructuredOutputs` | `var supportsStructuredOutputs: Bool` | [Sources/SwiftAISDK/Models/OpenAICompatibleConfig.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/OpenAICompatibleConfig.swift) |
 | Instance Property | `supportsUnaryVideoGeneration` | `let supportsUnaryVideoGeneration: Bool` | [Sources/SwiftAISDK/Models/FalMediaModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/FalMediaModels.swift) |
+| Instance Property | `supportsUnaryVideoGeneration` | `let supportsUnaryVideoGeneration: Bool` | [Sources/SwiftAISDK/Models/TopazVideoModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/TopazVideoModel.swift) |
 | Instance Property | `supportsVideoGenerationWebhooks` | `let supportsVideoGenerationWebhooks: Bool` | [Sources/SwiftAISDK/Models/FalMediaModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/FalMediaModels.swift) |
 | Instance Property | `supportsVideoGenerationWebhooks` | `let supportsVideoGenerationWebhooks: Bool` | [Sources/SwiftAISDK/Models/GatewayMediaModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/GatewayMediaModels.swift) |
 | Instance Property | `timezone` | `var timezone: String?` | [Sources/SwiftAISDK/Models/GatewayModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/GatewayModels.swift) |
