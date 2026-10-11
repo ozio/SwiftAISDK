@@ -21,7 +21,9 @@ public struct AIConsoleWarningLogger: AIWarningLogger {
 
     public func logWarnings(_ event: AIWarningLogEvent) async {
         for warning in event.warnings {
-            let message = AIWarningLogging.formattedMessage(for: warning, providerID: event.providerID, modelID: event.modelID) + "\n"
+            let code = warning.type == "deprecated" ? aiDeprecationCode(setting: warning.setting ?? "", provider: event.providerID) : nil
+            if let code, !AIWarningLogging.emittedDeprecations.insert(code) { continue }
+            let message = (code.map { "[\($0)] " } ?? "") + AIWarningLogging.formattedMessage(for: warning, providerID: event.providerID, modelID: event.modelID) + "\n"
             FileHandle.standardError.write(Data(message.utf8))
         }
     }
@@ -31,6 +33,7 @@ public enum AIWarningLogging {
     @TaskLocal private static var scopedState: AIWarningLoggingScopedState?
 
     private static let registry = AIWarningLoggingRegistry()
+    static let emittedDeprecations = AIDeprecationEmissionState()
 
     public static func useDefaultLogger() {
         registry.useDefaultLogger()
@@ -102,7 +105,50 @@ public enum AIWarningLogging {
 
     static func resetForTesting() {
         registry.resetForTesting()
+        emittedDeprecations.reset()
     }
+}
+
+enum AIDeprecationLogging {
+    @TaskLocal static var suppressObjectWarnings = false
+
+    static func objectWarning(_ setting: String) async {
+        guard !suppressObjectWarnings else { return }
+        await AIWarningLogging.logWarnings([AIWarning(type: "deprecated", setting: setting,
+            message: "Use \(setting == "generateObject" ? "generateText" : "streamText") with an output setting instead.")], providerID: nil, modelID: nil)
+    }
+}
+
+final class AIDeprecationEmissionState: @unchecked Sendable {
+    private let lock = NSLock()
+    private var codes: Set<String> = []
+    func insert(_ code: String) -> Bool { lock.withLock { codes.insert(code).inserted } }
+    func reset() { lock.withLock { codes.removeAll() } }
+}
+
+func aiDeprecationCode(setting: String, provider: String? = nil) -> String {
+    func encoded(_ text: String) -> String {
+        text.utf16.map { unit in
+            if (48...57).contains(unit) || (65...90).contains(unit) || (97...122).contains(unit) {
+                return String(UnicodeScalar(Int(unit))!)
+            }
+            return "_" + String(format: "%04X", unit)
+        }.joined()
+    }
+    if let provider { return "AISDK_DEP_PROVIDER_\(encoded(provider))__\(encoded(setting))" }
+    let fixed: [String: String] = [
+        "generateObject": "GENERATE_OBJECT", "streamObject": "STREAM_OBJECT",
+        "experimental_generateSpeech": "EXPERIMENTAL_GENERATE_SPEECH", "experimental_transcribe": "EXPERIMENTAL_TRANSCRIBE",
+        "\"image\" content part": "IMAGE_CONTENT_PART",
+        "rawInput in output-error UI message parts": "UI_MESSAGE_RAW_INPUT"
+    ]
+    if let code = fixed[setting] { return "AISDK_DEP_\(code)" }
+    for kind in ["file-data", "file-url", "file-id", "file-reference", "image-data", "image-url", "image-file-id", "image-file-reference"] {
+        if setting == "\"tool-result\" content of type \"\(kind)\"" {
+            return "AISDK_DEP_TOOL_RESULT_" + kind.uppercased().replacingOccurrences(of: "-", with: "_")
+        }
+    }
+    return "AISDK_DEP_SETTING_\(encoded(setting))"
 }
 
 private enum AIWarningLoggingScopedState: Sendable {

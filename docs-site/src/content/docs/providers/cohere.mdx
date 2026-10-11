@@ -17,9 +17,16 @@ description: "cohere provider capabilities and factories."
 - Embedding
 - Reranking
 
+## Embedding formats and usage
+
+Cohere embeddings accept output dimensions 256, 512, 768, 1024, 1536 and 2048. `providerOptions.cohere.embeddingType` selects float (default), int8, uint8, binary or ubinary; the parser requires the matching response array. Packed binary values remain numeric bytes rather than being unpacked. Provider dimensions override generic request dimensions.
+
+Input cache-read usage is recorded separately and subtracted from uncached input tokens, while raw provider usage remains available in generation and streaming.
+
+
 ## Notes
 
-Cohere mirrors upstream 4.0.54: `COHERE_API_KEY`, custom base URL and headers, versioned user-agent suffix, callable/language aliases, embedding/textEmbedding aliases, reranking aliases, chat `/v2/chat`, embedding `/v2/embed`, reranking `/v2/rerank`, prompt conversion for text/images/documents/tool calls, providerOptions.cohere schemas, top-level reasoning to Cohere `thinking` budget mapping, providerOptions thinking precedence, response format and tool choice mapping, streaming lifecycle/tool-call/reasoning parts, response metadata with complete raw usage, embedding/reranking response bodies, object-document reranking warnings, and unsupported non-text document media. ProviderV4 type names, ESM-only packaging, Node 22 engines, TypeScript option export renames, optional JS headers config, and workflow serialization helpers are JS-only upstream concerns.
+Cohere mirrors upstream 4.0.59: `COHERE_API_KEY`, custom base URL and headers, versioned user-agent suffix, callable/language aliases, embedding/textEmbedding aliases, reranking aliases, chat `/v2/chat`, embedding `/v2/embed`, reranking `/v2/rerank`, prompt conversion for text/images/documents/tool calls, providerOptions.cohere schemas, top-level reasoning to Cohere `thinking` budget mapping, providerOptions thinking precedence, response format and tool choice mapping, streaming lifecycle/tool-call/reasoning parts, response metadata with complete raw usage, embedding/reranking response bodies, object-document reranking warnings, and unsupported non-text document media. ProviderV4 type names, ESM-only packaging, Node 22 engines, TypeScript option export renames, optional JS headers config, and workflow serialization helpers are JS-only upstream concerns. The 2026-10-11 pass: Embeddings select float, int8, uint8, binary or ubinary responses, support 768/2048 dimensions and common-dimension defaults; chat retains cached token accounting.
 
 Factory argument requirements are defined by the public Swift factory signatures. Use [Public symbols](/reference/generated/public-symbols/) when you need the exact initializer or factory declaration.
 

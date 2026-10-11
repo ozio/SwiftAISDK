@@ -65,7 +65,7 @@ public final class GoogleEmbeddingModel: EmbeddingModel, @unchecked Sendable {
                 "model": .string("models/\(modelID)"),
                 "content": .object(["parts": .array(googleEmbeddingParts(text: request.values[0], content: multimodalContent?.first))])
             ]
-            if let outputDimensionality = options["outputDimensionality"] {
+            if let outputDimensionality = options["outputDimensionality"] ?? request.dimensions.map({ JSONValue.number(Double($0)) }) {
                 object["outputDimensionality"] = outputDimensionality
             }
             if let taskType = options["taskType"] {
@@ -82,7 +82,7 @@ public final class GoogleEmbeddingModel: EmbeddingModel, @unchecked Sendable {
                             "parts": .array(googleEmbeddingParts(text: value, content: multimodalContent?[index]))
                         ])
                     ]
-                    if let outputDimensionality = options["outputDimensionality"] {
+                    if let outputDimensionality = options["outputDimensionality"] ?? request.dimensions.map({ JSONValue.number(Double($0)) }) {
                         object["outputDimensionality"] = outputDimensionality
                     }
                     if let taskType = options["taskType"] {
@@ -260,6 +260,13 @@ public final class GoogleImageGenerationModel: ImageModel, @unchecked Sendable {
         )
         var generationConfig = body["generationConfig"]?.objectValue ?? [:]
         googleApplyProviderGenerationOptions(options, to: &generationConfig)
+        generationConfig["responseModalities"] = ["IMAGE"]
+        if let seed = request.seed { generationConfig["seed"] = .number(Double(seed)) }
+        if let aspectRatio = googleAspectRatio(from: request) {
+            var imageConfig = generationConfig["imageConfig"]?.objectValue ?? [:]
+            imageConfig["aspectRatio"] = .string(aspectRatio)
+            generationConfig["imageConfig"] = .object(imageConfig)
+        }
         body["generationConfig"] = .object(generationConfig)
         body.merge(googleTopLevelGenerateContentOptions(options)) { _, new in new }
         body.merge(googleExtraBodyWithoutToolChoice(options).filter { $0.key != "googleSearch" }) { _, new in new }
@@ -292,6 +299,7 @@ public final class GoogleImageGenerationModel: ImageModel, @unchecked Sendable {
             base64Images: images,
             rawValue: raw,
             warnings: warnings,
+            usage: googleGenerateContentUsage(from: raw),
             providerMetadata: googleGenerateContentProviderMetadata(from: raw).merging(["google": .object([
                 "finishReason": raw["candidates"]?[0]?["finishReason"] ?? .null,
                 "images": .array(images.map { _ in .object([:]) })

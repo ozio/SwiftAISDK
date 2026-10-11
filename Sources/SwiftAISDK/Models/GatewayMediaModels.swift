@@ -14,6 +14,7 @@ public final class GatewayEmbeddingModel: EmbeddingModel, @unchecked Sendable {
 
     public func embed(_ request: EmbeddingRequest) async throws -> EmbeddingResult {
         var body: [String: JSONValue] = ["values": .array(request.values)]
+        if let dimensions = request.dimensions { body["dimensions"] = .number(Double(dimensions)) }
         if !request.providerOptions.isEmpty { body["providerOptions"] = .object(request.providerOptions) }
         body.merge(request.extraBody) { _, new in new }
         let response = try await config.sendJSONResponse(path: "/embedding-model", modelID: modelID, body: .object(body), headers: request.headers.mergingHeaders([
@@ -395,13 +396,19 @@ public final class GatewayTranscriptionModel:
             throw AIError.invalidResponse(provider: providerID, message: "No text found in Gateway transcription response.")
         }
         let segments = standardTranscriptionSegments(from: raw)
+        var warnings = gatewayWarnings(from: raw["warnings"])
+        if (modelID.hasPrefix("xai/") || modelID.hasPrefix("spacexai/")),
+           (request.providerOptions["xai"]?["diarize"]?.boolValue == true || request.providerOptions["spacexai"]?["diarize"]?.boolValue == true),
+           !gatewayContainsSpeaker(raw) {
+            warnings.append(AIWarning(type: "unsupported", feature: "providerOptions.xai.diarize", message: "AI Gateway does not currently expose xAI speaker diarization metadata."))
+        }
         return TranscriptionResult(
             text: text,
             rawValue: raw,
             segments: segments,
             language: raw["language"]?.stringValue,
             durationInSeconds: raw["durationInSeconds"]?.doubleValue ?? raw["duration"]?.doubleValue ?? transcriptionDuration(from: segments),
-            warnings: gatewayWarnings(from: raw["warnings"]),
+            warnings: warnings,
             providerMetadata: gatewayProviderMetadata(raw["providerMetadata"] ?? raw["provider_metadata"]),
             requestMetadata: AIRequestMetadata(body: .object(body), headers: request.headers),
             responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID),
@@ -419,4 +426,12 @@ private func gatewayWarnings(from value: JSONValue?) -> [AIWarning] {
             message: warning["message"]?.stringValue ?? warning["details"]?.stringValue
         )
     } ?? []
+}
+
+private func gatewayContainsSpeaker(_ value: JSONValue) -> Bool {
+    if let array = value.arrayValue { return array.contains(where: gatewayContainsSpeaker) }
+    guard let object = value.objectValue else { return false }
+    return object.contains { key, nested in
+        (key == "speaker" && nested != .null) || gatewayContainsSpeaker(nested)
+    }
 }

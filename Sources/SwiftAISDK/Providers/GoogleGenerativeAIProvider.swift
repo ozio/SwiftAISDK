@@ -1,8 +1,8 @@
 import Foundation
 
-public final class GoogleGenerativeAIProvider: AIProvider, AIEvaluationProvider, @unchecked Sendable {
+public final class GoogleGenerativeAIProvider: AIProvider, AIEvaluationProvider, AIDecisionProvider, @unchecked Sendable {
     public let providerID: String
-    public let supportedCapabilities: Set<ModelCapability> = [.language, .embedding, .image, .speech, .video, .evaluation]
+    public let supportedCapabilities: Set<ModelCapability> = [.language, .embedding, .image, .speech, .video, .evaluation, .decision]
     private let config: ModelHTTPConfig
 
     public init(settings: ProviderSettings = ProviderSettings()) throws {
@@ -20,7 +20,8 @@ public final class GoogleGenerativeAIProvider: AIProvider, AIEvaluationProvider,
             includeUsage: settings.includeUsage,
             queryParams: settings.queryParams,
             supportsStructuredOutputs: settings.supportsStructuredOutputs,
-            transformRequestBody: settings.transformRequestBody
+            transformRequestBody: settings.transformRequestBody,
+            batchResultMaxLineBytes: settings.batchResultDownloads?.maxLineBytes
         )
     }
 
@@ -38,6 +39,17 @@ public final class GoogleGenerativeAIProvider: AIProvider, AIEvaluationProvider,
             model: GoogleBatchLanguageModel(modelID: modelID, config: config),
             providerID: googleEvaluationProviderID(from: providerID)
         )
+    }
+
+    public func decisionModel(_ modelID: String) throws -> any AIDecisionModelV4 {
+        DecisionLanguageModel(
+            model: try languageModel(modelID),
+            providerID: String(googleEvaluationProviderID(from: providerID).dropLast(".evaluation".count)) + ".decision"
+        )
+    }
+
+    public func experimentalDecisionModel(_ modelID: String) throws -> any AIDecisionModelV4 {
+        try decisionModel(modelID)
     }
 
     /// Provider-owned Batch V4 service. The model-bound factory above remains

@@ -95,7 +95,7 @@ import Testing
 
     let geminiImage = try await geminiModel.generateImage(ImageGenerationRequest(prompt: "cat"))
 
-    #expect(geminiImage.requestMetadata.body?["prompt"]?.stringValue == "cat")
+    #expect(geminiImage.requestMetadata.body?["contents"]?[0]?["parts"]?[0]?["text"]?.stringValue == "cat")
     #expect(geminiImage.responseMetadata.modelID == "gemini-2.5-flash-image")
     #expect(geminiImage.responseMetadata.headers["vertex-header"] == "gemini-image")
 

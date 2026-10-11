@@ -8,7 +8,7 @@ pass uses a newer version.
 Provider/product status is tracked separately in `Docs/PortingStatus.md`. This
 table is an inventory and version ledger, not the remaining work list.
 
-Registry versions were checked with `npm view <package> version` on 2026-10-04.
+Registry versions were checked with `npm view <package> version` on 2026-10-11.
 The rows record the published package versions audited in this snapshot;
 behavior is either ported or covered, or explicitly deferred in the status and
 audit documents. Rows are not silently advanced before a package-by-package
@@ -16,52 +16,52 @@ source and behavior review.
 
 | Package | Version baseline | Main Swift evidence |
 | --- | --- | --- |
-| `@ai-sdk/alibaba` | `2.0.60` | `AIProviders.alibaba`, `AlibabaLanguageModel`, `AlibabaEmbeddingModel`, `AlibabaProviderTests.swift` |
-| `@ai-sdk/amazon-bedrock` | `5.0.105` | `AIProviders.amazonBedrock`, `AIProviders.amazonBedrockAnthropic`, `AIProviders.bedrockMantle`, `AmazonBedrockModels.swift`, `AmazonBedrockTests.swift`, `AnthropicBedrockUpstream202609Tests.swift` |
-| `@ai-sdk/anthropic` | `4.0.71` | `AIProviders.anthropic`, `AnthropicLanguageModel`, `AnthropicBatchLanguageModel`, `AnthropicTools`, `AnthropicTests.swift`, `AnthropicBatchV4UpstreamTests.swift`, `AnthropicBedrockUpstream202609Tests.swift` |
-| `@ai-sdk/anthropic-aws` | `2.0.63` | `AIProviders.anthropicAWS`, `AnthropicAWSProvider`, `AnthropicTests.swift`, `AnthropicBedrockUpstream202609Tests.swift` |
-| `@ai-sdk/assemblyai` | `3.0.53` | `AIProviders.assemblyAI`, `AssemblyAITranscriptionModel`, `AssemblyAIProviderTests.swift` |
-| `@ai-sdk/azure` | `4.0.90` | `AIProviders.azure`, `AzureOpenAIProvider`, `AzureOpenAITools`, `AlibabaProdiaAzureQuiverTests.swift` |
-| `@ai-sdk/baseten` | `2.1.40` | `AIProviders.baseten`, `OpenAICompatibleProvider`, `BasetenProviderTests.swift` |
-| `@ai-sdk/black-forest-labs` | `2.0.54` | `AIProviders.blackForestLabs`, `BlackForestLabsImageModel`, `BlackForestLabsVideoModel`, `AsyncVideoModel`, `BlackForestLabsVideoModelTests.swift`, `BlackForestLabsVideoOperationTests.swift` |
-| `@ai-sdk/bytedance` | `2.0.56` | `AIProviders.byteDance`, `ByteDanceVideoModel`, `AsyncVideoModel`, `ByteDanceProviderTests.swift`, `ByteDanceAsyncVideoUpstreamParityTests.swift`, `MediaStatusRedirectUpstreamTests.swift` |
-| `@ai-sdk/cartesia` | `3.0.48` | `AIProviders.cartesia`, `CartesiaProvider`, `CartesiaSpeechModel`, `CartesiaTranscriptionModel`, `CartesiaStreamingTranscriptionModel`, `Cartesia*Tests.swift` |
-| `@ai-sdk/cerebras` | `3.0.62` | `AIProviders.cerebras`, `CerebrasLanguageModel`, `CerebrasProviderTests.swift` |
-| `@ai-sdk/cohere` | `4.0.54` | `AIProviders.cohere`, `CohereLanguageModel`, `CohereEmbeddingModel`, `CohereRerankingModel`, `CohereMistralVoyageTests.swift` |
-| `@ai-sdk/deepgram` | `3.1.24` | `AIProviders.deepgram`, `DeepgramTranscriptionModel`, `DeepgramSpeechModel`, `DeepgramProviderTests.swift` |
-| `@ai-sdk/deepinfra` | `3.0.62` | `AIProviders.deepInfra`, `OpenAICompatibleProvider`, `DeepInfraProviderTests.swift` |
-| `@ai-sdk/deepseek` | `3.0.58` | `AIProviders.deepSeek`, `DeepSeekLanguageModel`, `DeepSeekFileClient`, `DeepSeekProviderTests.swift`, `DeepSeekVisionAndFilesUpstreamParityTests.swift` |
-| `@ai-sdk/elevenlabs` | `3.0.54` | `AIProviders.elevenLabs`, `ElevenLabsSpeechModel`, `ElevenLabsTranscriptionModel`, `ElevenLabsProviderTests.swift` |
-| `@ai-sdk/fal` | `3.0.54` | `AIProviders.fal`, `FalMediaProviderTests.swift`, `FalProviderTests.swift` |
-| `@ai-sdk/fish-audio` | `3.0.31` | `AIProviders.fishAudio`, `FishAudioProvider`, `FishAudioSpeechModel`, `FishAudioTranscriptionModel`, `FishAudio*Tests.swift` |
-| `@ai-sdk/fireworks` | `3.0.65` | `AIProviders.fireworks`, `FireworksProviderTests.swift` |
-| `@ai-sdk/gateway` | `4.0.103` | `AIProviders.gateway`, `GatewayProvider`, `GatewayModels.swift`, `GatewayStreamingTranscriptionModel.swift`, `GatewayTests.swift`, `Gateway*UpstreamParityTests.swift` |
-| `@ai-sdk/gmicloud` | `3.0.33` | `AIProviders.gmiCloud`, `GMICloudProvider`, `OpenAICompatibleChatModel`, `GMICloudProviderTests.swift` |
-| `@ai-sdk/gladia` | `3.0.53` | `AIProviders.gladia`, `GladiaTranscriptionModel`, `GladiaProviderTests.swift` |
-| `@ai-sdk/google` | `4.0.87` | `AIProviders.google`, `GoogleGenerativeAIProvider`, `GoogleGenerativeAI.swift`, `GoogleGenerativeMediaModels.swift`, `GoogleGenerativeAITests.swift`, `GoogleGenerativeAIMediaAndToolsTests.swift`, `GoogleBatchLanguageModel`, `GoogleBatchUpstreamTests.swift`, `GoogleGenerativeAIVideoAndInteractionsTests.swift` |
-| `@ai-sdk/google-vertex` | `5.0.101` | `AIProviders.googleVertex`, `GoogleVertexProvider`, `GoogleVertexProvider.swift`, `GoogleVertexModels.swift`, `GoogleVertexTests.swift`, `GoogleVertexMediaAndMaaSTests.swift` |
-| `@ai-sdk/groq` | `4.0.54` | `AIProviders.groq`, `GroqLanguageModel`, `GroqTranscriptionModel`, `GroqProviderTests.swift` |
-| `@ai-sdk/huggingface` | `2.0.62` | `AIProviders.huggingFace`, `HuggingFaceProvider`, `HuggingFaceResponsesLanguageModel`, `HuggingFaceProviderTests.swift` |
-| `@ai-sdk/hume` | `3.0.53` | `AIProviders.hume`, `HumeSpeechModel`, `HumeProviderTests.swift` |
-| `@ai-sdk/klingai` | `4.0.55` | `AIProviders.klingAI`, `KlingAIVideoModel`, `KlingAIProviderTests.swift`, `MediaStatusRedirectUpstreamTests.swift` |
+| `@ai-sdk/alibaba` | `2.0.65` | `AIProviders.alibaba`, `AlibabaLanguageModel`, `AlibabaEmbeddingModel`, `AlibabaProviderTests.swift` |
+| `@ai-sdk/amazon-bedrock` | `5.0.113` | `AIProviders.amazonBedrock`, `AIProviders.amazonBedrockAnthropic`, `AIProviders.bedrockMantle`, `AmazonBedrockModels.swift`, `AmazonBedrockTests.swift`, `AnthropicBedrockUpstream202609Tests.swift` |
+| `@ai-sdk/anthropic` | `4.0.78` | `AIProviders.anthropic`, `AnthropicLanguageModel`, `AnthropicBatchLanguageModel`, `AnthropicTools`, `AnthropicTests.swift`, `AnthropicBatchV4UpstreamTests.swift`, `AnthropicBedrockUpstream202609Tests.swift` |
+| `@ai-sdk/anthropic-aws` | `2.0.71` | `AIProviders.anthropicAWS`, `AnthropicAWSProvider`, `AnthropicTests.swift`, `AnthropicBedrockUpstream202609Tests.swift` |
+| `@ai-sdk/assemblyai` | `3.0.58` | `AIProviders.assemblyAI`, `AssemblyAITranscriptionModel`, `AssemblyAIProviderTests.swift` |
+| `@ai-sdk/azure` | `4.0.99` | `AIProviders.azure`, `AzureOpenAIProvider`, `AzureOpenAITools`, `AlibabaProdiaAzureQuiverTests.swift` |
+| `@ai-sdk/baseten` | `2.1.45` | `AIProviders.baseten`, `OpenAICompatibleProvider`, `BasetenProviderTests.swift` |
+| `@ai-sdk/black-forest-labs` | `2.0.59` | `AIProviders.blackForestLabs`, `BlackForestLabsImageModel`, `BlackForestLabsVideoModel`, `AsyncVideoModel`, `BlackForestLabsVideoModelTests.swift`, `BlackForestLabsVideoOperationTests.swift` |
+| `@ai-sdk/bytedance` | `2.0.61` | `AIProviders.byteDance`, `ByteDanceVideoModel`, `AsyncVideoModel`, `ByteDanceProviderTests.swift`, `ByteDanceAsyncVideoUpstreamParityTests.swift`, `MediaStatusRedirectUpstreamTests.swift` |
+| `@ai-sdk/cartesia` | `3.0.53` | `AIProviders.cartesia`, `CartesiaProvider`, `CartesiaSpeechModel`, `CartesiaTranscriptionModel`, `CartesiaStreamingTranscriptionModel`, `Cartesia*Tests.swift` |
+| `@ai-sdk/cerebras` | `3.0.67` | `AIProviders.cerebras`, `CerebrasLanguageModel`, `CerebrasProviderTests.swift` |
+| `@ai-sdk/cohere` | `4.0.59` | `AIProviders.cohere`, `CohereLanguageModel`, `CohereEmbeddingModel`, `CohereRerankingModel`, `CohereMistralVoyageTests.swift` |
+| `@ai-sdk/deepgram` | `3.1.29` | `AIProviders.deepgram`, `DeepgramTranscriptionModel`, `DeepgramSpeechModel`, `DeepgramProviderTests.swift` |
+| `@ai-sdk/deepinfra` | `3.0.67` | `AIProviders.deepInfra`, `OpenAICompatibleProvider`, `DeepInfraProviderTests.swift` |
+| `@ai-sdk/deepseek` | `3.0.63` | `AIProviders.deepSeek`, `DeepSeekLanguageModel`, `DeepSeekFileClient`, `DeepSeekProviderTests.swift`, `DeepSeekVisionAndFilesUpstreamParityTests.swift` |
+| `@ai-sdk/elevenlabs` | `3.0.59` | `AIProviders.elevenLabs`, `ElevenLabsSpeechModel`, `ElevenLabsTranscriptionModel`, `ElevenLabsProviderTests.swift` |
+| `@ai-sdk/fal` | `3.0.59` | `AIProviders.fal`, `FalMediaProviderTests.swift`, `FalProviderTests.swift` |
+| `@ai-sdk/fish-audio` | `3.0.36` | `AIProviders.fishAudio`, `FishAudioProvider`, `FishAudioSpeechModel`, `FishAudioTranscriptionModel`, `FishAudio*Tests.swift` |
+| `@ai-sdk/fireworks` | `3.0.70` | `AIProviders.fireworks`, `FireworksProviderTests.swift` |
+| `@ai-sdk/gateway` | `4.0.110` | `AIProviders.gateway`, `GatewayProvider`, `GatewayModels.swift`, `GatewayStreamingTranscriptionModel.swift`, `GatewayTests.swift`, `Gateway*UpstreamParityTests.swift` |
+| `@ai-sdk/gmicloud` | `3.0.38` | `AIProviders.gmiCloud`, `GMICloudProvider`, `OpenAICompatibleChatModel`, `GMICloudProviderTests.swift` |
+| `@ai-sdk/gladia` | `3.0.58` | `AIProviders.gladia`, `GladiaTranscriptionModel`, `GladiaProviderTests.swift` |
+| `@ai-sdk/google` | `4.0.93` | `AIProviders.google`, `GoogleGenerativeAIProvider`, `GoogleGenerativeAI.swift`, `GoogleGenerativeMediaModels.swift`, `GoogleGenerativeAITests.swift`, `GoogleGenerativeAIMediaAndToolsTests.swift`, `GoogleBatchLanguageModel`, `GoogleBatchUpstreamTests.swift`, `GoogleGenerativeAIVideoAndInteractionsTests.swift` |
+| `@ai-sdk/google-vertex` | `5.0.109` | `AIProviders.googleVertex`, `GoogleVertexProvider`, `GoogleVertexProvider.swift`, `GoogleVertexModels.swift`, `GoogleVertexTests.swift`, `GoogleVertexMediaAndMaaSTests.swift` |
+| `@ai-sdk/groq` | `4.0.59` | `AIProviders.groq`, `GroqLanguageModel`, `GroqTranscriptionModel`, `GroqProviderTests.swift` |
+| `@ai-sdk/huggingface` | `2.0.67` | `AIProviders.huggingFace`, `HuggingFaceProvider`, `HuggingFaceResponsesLanguageModel`, `HuggingFaceProviderTests.swift` |
+| `@ai-sdk/hume` | `3.0.58` | `AIProviders.hume`, `HumeSpeechModel`, `HumeProviderTests.swift` |
+| `@ai-sdk/klingai` | `4.0.60` | `AIProviders.klingAI`, `KlingAIVideoModel`, `KlingAIProviderTests.swift`, `MediaStatusRedirectUpstreamTests.swift` |
 | `@ai-sdk/lmnt` | `3.0.36` | `AIProviders.lmnt`, `LMNTSpeechModel`, `LMNTProviderTests.swift` |
-| `@ai-sdk/luma` | `3.0.54` | `AIProviders.luma`, `LumaImageModel`, `LumaProviderTests.swift` |
-| `@ai-sdk/mcp` | `2.0.66` | `MCPClient`, `MCPHTTPTransport`, `MCPStdioTransport`, `MCPApps`, `MCPClientTests.swift`, `MCPOAuthTests.swift`, `MCPStdioTransportTests.swift`, `MCPModernProtocolTests.swift` |
-| `@ai-sdk/minimax` | `3.0.48` | `AIProviders.miniMax`, `MiniMaxProvider`, `AnthropicLanguageModel`, `MiniMaxVideoModel`, `MiniMaxProviderTests.swift`, `MediaStatusRedirectUpstreamTests.swift` |
-| `@ai-sdk/mistral` | `4.0.56` | `AIProviders.mistral`, `MistralLanguageModel`, `MistralEmbeddingModel`, `MistralTranscriptionModel`, `MistralSpeechModel`, `PerplexityMistralUpstreamTests.swift` |
-| `@ai-sdk/moonshotai` | `3.0.62` | `AIProviders.moonshotAI`, `MoonshotLanguageModel`, `MoonshotAIProviderTests.swift` |
-| `@ai-sdk/open-responses` | `2.0.58` | `AIProviders.openResponses`, `ResponsesRequestMode.openResponses`, `OpenResponsesTools`, `ResponsesEndpointTests.swift`, `OpenAIResponsesMessageConversionTests.swift` |
-| `@ai-sdk/openai` | `4.0.83` | `AIProviders.openAI`, `OpenAICompatible*Model`, `OpenAITools`, `OpenAI*Tests.swift`, `FileAndSkillClientTests.swift`, `CoreOpenAIUpstream202609Tests.swift`, `OpenAIResponsesBatchV4UpstreamTests.swift` |
-| `@ai-sdk/openai-compatible` | `3.0.62` | `AIProviders.openAICompatible`, `OpenAICompatibleProvider`, `OpenAICompatibleTests.swift` |
-| `@ai-sdk/perplexity` | `5.0.5` | `AIProviders.perplexity`, `PerplexityLanguageModel`, `PerplexitySonarLanguageModel`, `PerplexityEmbeddingModel`, `PerplexityMistralUpstreamTests.swift` |
-| `@ai-sdk/prodia` | `2.0.54` | `AIProviders.prodia`, `ProdiaLanguageModel`, `ProdiaMediaModel`, `ProdiaProviderTests.swift` |
-| `@ai-sdk/quiverai` | `2.0.54` | `AIProviders.quiverAI`, `OpenAICompatibleResponsesModel`, `QuiverAITools`, `QuiverAIImageModel`, `QuiverAIProviderTests.swift` |
-| `@ai-sdk/replicate` | `3.0.54` | `AIProviders.replicate`, `ReplicateImageModel`, `ReplicateVideoModel`, `ReplicateProviderTests.swift` |
-| `@ai-sdk/revai` | `3.0.53` | `AIProviders.revAI`, `RevAITranscriptionModel`, `RevAIProviderTests.swift` |
-| `@ai-sdk/togetherai` | `3.0.63` | `AIProviders.togetherAI`, `TogetherAIImageModel`, `TogetherAIRerankingModel`, `TogetherAIProviderTests.swift` |
-| `@ai-sdk/topaz` | `3.0.0` | `AIProviders.topaz`, `TopazImageModel`, `TopazVideoModel`, `TopazProviderTests.swift` |
-| `@ai-sdk/typesafe-ai` | `3.0.12` | `AIProviders.typeSafeAI`, `TypeSafeAIProvider`, `TypeSafeAIEvaluationModel`, `TypesafeAIProviderTests.swift` |
+| `@ai-sdk/luma` | `3.0.59` | `AIProviders.luma`, `LumaImageModel`, `LumaProviderTests.swift` |
+| `@ai-sdk/mcp` | `2.0.73` | `MCPClient`, `MCPHTTPTransport`, `MCPStdioTransport`, `MCPApps`, `MCPClientTests.swift`, `MCPOAuthTests.swift`, `MCPStdioTransportTests.swift`, `MCPModernProtocolTests.swift` |
+| `@ai-sdk/minimax` | `3.0.55` | `AIProviders.miniMax`, `MiniMaxProvider`, `AnthropicLanguageModel`, `MiniMaxVideoModel`, `MiniMaxProviderTests.swift`, `MediaStatusRedirectUpstreamTests.swift` |
+| `@ai-sdk/mistral` | `4.0.62` | `AIProviders.mistral`, `MistralLanguageModel`, `MistralEmbeddingModel`, `MistralTranscriptionModel`, `MistralSpeechModel`, `PerplexityMistralUpstreamTests.swift` |
+| `@ai-sdk/moonshotai` | `3.0.67` | `AIProviders.moonshotAI`, `MoonshotLanguageModel`, `MoonshotAIProviderTests.swift` |
+| `@ai-sdk/open-responses` | `2.0.63` | `AIProviders.openResponses`, `ResponsesRequestMode.openResponses`, `OpenResponsesTools`, `ResponsesEndpointTests.swift`, `OpenAIResponsesMessageConversionTests.swift` |
+| `@ai-sdk/openai` | `4.0.91` | `AIProviders.openAI`, `OpenAICompatible*Model`, `OpenAITools`, `OpenAI*Tests.swift`, `FileAndSkillClientTests.swift`, `CoreOpenAIUpstream202609Tests.swift`, `OpenAIResponsesBatchV4UpstreamTests.swift` |
+| `@ai-sdk/openai-compatible` | `3.0.67` | `AIProviders.openAICompatible`, `OpenAICompatibleProvider`, `OpenAICompatibleTests.swift` |
+| `@ai-sdk/perplexity` | `5.0.10` | `AIProviders.perplexity`, `PerplexityLanguageModel`, `PerplexitySonarLanguageModel`, `PerplexityEmbeddingModel`, `PerplexityMistralUpstreamTests.swift` |
+| `@ai-sdk/prodia` | `2.0.59` | `AIProviders.prodia`, `ProdiaLanguageModel`, `ProdiaMediaModel`, `ProdiaProviderTests.swift` |
+| `@ai-sdk/quiverai` | `2.0.59` | `AIProviders.quiverAI`, `OpenAICompatibleResponsesModel`, `QuiverAITools`, `QuiverAIImageModel`, `QuiverAIProviderTests.swift` |
+| `@ai-sdk/replicate` | `3.0.59` | `AIProviders.replicate`, `ReplicateImageModel`, `ReplicateVideoModel`, `ReplicateProviderTests.swift` |
+| `@ai-sdk/revai` | `3.0.58` | `AIProviders.revAI`, `RevAITranscriptionModel`, `RevAIProviderTests.swift` |
+| `@ai-sdk/togetherai` | `3.0.68` | `AIProviders.togetherAI`, `TogetherAIImageModel`, `TogetherAIRerankingModel`, `TogetherAIProviderTests.swift` |
+| `@ai-sdk/topaz` | `3.0.5` | `AIProviders.topaz`, `TopazImageModel`, `TopazVideoModel`, `TopazProviderTests.swift` |
+| `@ai-sdk/typesafe-ai` | `3.0.17` | `AIProviders.typeSafeAI`, `TypeSafeAIProvider`, `TypeSafeAIEvaluationModel`, `TypesafeAIProviderTests.swift`, `DecisionProviderTests.swift` |
 | `@ai-sdk/vercel` | `3.0.30` | `AIProviders.vercel`, `VercelProvider`, `ProviderRegistryVercelTests.swift` |
-| `@ai-sdk/voyage` | `2.0.53` | `AIProviders.voyage`, `VoyageEmbeddingModel`, `VoyageRerankingModel`, `VoyageProviderOptionSchemaTests.swift` |
-| `@ai-sdk/xai` | `5.0.14` | `AIProviders.xAI`, `XAIResponses.swift`, `XAIResponsesBatchLanguageModel.swift`, `XAITools`, `XAIImageModel`, `XAIVideoModel`, `XAIProviderTests.swift`, `ProviderGroupBUpstreamParity20260831Tests.swift` |
-| `@ai-sdk/zai` | `3.0.24` | `AIProviders.zai`, `ZAIProvider`, `ZAILanguageModel`, `ZAIProviderTests.swift` |
+| `@ai-sdk/voyage` | `2.0.58` | `AIProviders.voyage`, `VoyageEmbeddingModel`, `VoyageRerankingModel`, `VoyageProviderOptionSchemaTests.swift` |
+| `@ai-sdk/xai` | `5.0.20` | `AIProviders.xAI`, `XAIResponses.swift`, `XAIResponsesBatchLanguageModel.swift`, `XAITools`, `XAIImageModel`, `XAIVideoModel`, `XAIProviderTests.swift`, `ProviderGroupBUpstreamParity20260831Tests.swift` |
+| `@ai-sdk/zai` | `3.0.29` | `AIProviders.zai`, `ZAIProvider`, `ZAILanguageModel`, `ZAIProviderTests.swift` |

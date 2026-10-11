@@ -58,7 +58,7 @@ public final class AmazonBedrockEmbeddingModel: EmbeddingModel, @unchecked Senda
             if let truncate = try bedrockEmbeddingStringOption(providerOptions["truncate"], argument: "providerOptions.bedrock.truncate", allowed: ["NONE", "START", "END"]) {
                 body["truncate"] = .string(truncate)
             }
-            if let outputDimension = try bedrockEmbeddingIntOption(providerOptions["outputDimension"], argument: "providerOptions.bedrock.outputDimension", allowed: [256, 512, 1024, 1536]) {
+            if let outputDimension = try bedrockEmbeddingIntOption(providerOptions["outputDimension"], argument: "providerOptions.bedrock.outputDimension", allowed: [256, 512, 1024, 1536]) ?? request.dimensions {
                 body["output_dimension"] = .number(Double(outputDimension))
             }
         } else if modelFamily == .nova {
@@ -78,7 +78,7 @@ public final class AmazonBedrockEmbeddingModel: EmbeddingModel, @unchecked Senda
                     "CLUSTERING"
                 ]
             ) ?? "GENERIC_INDEX"
-            let embeddingDimension = try bedrockEmbeddingIntOption(providerOptions["embeddingDimension"], argument: "providerOptions.bedrock.embeddingDimension", allowed: [256, 384, 1024, 3072]) ?? 1024
+            let embeddingDimension = try bedrockEmbeddingIntOption(providerOptions["embeddingDimension"], argument: "providerOptions.bedrock.embeddingDimension", allowed: [256, 384, 1024, 3072]) ?? request.dimensions ?? 1024
             let truncate = try bedrockEmbeddingStringOption(providerOptions["truncate"], argument: "providerOptions.bedrock.truncate", allowed: ["NONE", "START", "END"]) ?? "END"
             body = [
                 "taskType": "SINGLE_EMBEDDING",
@@ -92,7 +92,7 @@ public final class AmazonBedrockEmbeddingModel: EmbeddingModel, @unchecked Senda
             let value = request.values[0]
             body = ["inputText": .string(value)]
             let providerDimensions = try bedrockEmbeddingIntOption(providerOptions["dimensions"], argument: "providerOptions.bedrock.dimensions", allowed: [256, 512, 1024])
-            if let dimensions = request.dimensions ?? providerDimensions {
+            if let dimensions = providerDimensions ?? request.dimensions {
                 body["dimensions"] = .number(Double(dimensions))
             }
             if let normalize = try bedrockEmbeddingBoolOption(providerOptions["normalize"], argument: "providerOptions.bedrock.normalize") {

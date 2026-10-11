@@ -76,7 +76,7 @@ struct TopazProviderTests {
         #expect(request.headers["accept"] == "application/json")
         #expect(request.headers["x-custom"] == "custom-value")
         #expect(request.headers["x-call"] == "call-value")
-        #expect(request.headers["user-agent"] == "App/1.0 ai-sdk-topaz/3.0.0")
+        #expect(request.headers["user-agent"] == "App/1.0 ai-sdk-topaz/3.0.5")
     }
 
     @Test func customAndCallHeadersOverrideCaseInsensitively() async throws {
@@ -299,7 +299,7 @@ struct TopazProviderTests {
         #expect(requests[0].headers["x-api-key"] == "test-key")
         #expect(requests[1].body == video.data)
         #expect(requests[1].headers["content-type"] == "video/mp4")
-        #expect(requests[1].headers["user-agent"] == "ai-sdk-topaz/3.0.0")
+        #expect(requests[1].headers["user-agent"] == "ai-sdk-topaz/3.0.5")
         #expect(requests[1].headers["x-api-key"] == nil)
         #expect(!requests[1].followRedirects)
         let body = try decodeJSONBody(#require(requests[0].body))

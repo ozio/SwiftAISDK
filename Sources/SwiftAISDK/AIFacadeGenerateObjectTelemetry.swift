@@ -12,6 +12,7 @@ func generateObjectResult<Output: Sendable>(
     callbacks: AIObjectGenerationCallbacks<Output>?,
     parse: @escaping @Sendable (String, String) async throws -> (object: Output, rawObject: JSONValue, text: String)
 ) async throws -> ObjectGenerationResult<Output> {
+    await AIDeprecationLogging.objectWarning("generateObject")
     let callID = UUID().uuidString
     await callbacks?.onStart?(AIObjectGenerationStartEvent(
         callID: callID,

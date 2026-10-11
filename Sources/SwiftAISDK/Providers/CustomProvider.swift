@@ -47,6 +47,14 @@ public enum AIDefaultProvider {
         return try validateEvaluationModelVersion(evaluationProvider.evaluationModel(modelID))
     }
 
+    public static func resolveDecisionModel(_ modelID: String) throws -> any AIDecisionModelV4 {
+        let provider = try resolved()
+        guard let decisionProvider = provider as? any AIDecisionProvider else {
+            throw AIDecisionModelResolutionError.defaultProviderUnsupported(modelID: modelID)
+        }
+        return try validateDecisionModelVersion(decisionProvider.decisionModel(modelID))
+    }
+
     public static func withProvider<Result>(
         _ provider: any AIProvider,
         operation: () throws -> Result
@@ -89,7 +97,7 @@ public enum AIProviderRegistryError: Error, Equatable, CustomStringConvertible, 
     }
 }
 
-public final class AIProviderRegistry: AIProvider, AIEvaluationProvider, @unchecked Sendable {
+public final class AIProviderRegistry: AIProvider, AIEvaluationProvider, AIDecisionProvider, @unchecked Sendable {
     public let providerID: String
     public let supportedCapabilities: Set<ModelCapability>
 
@@ -167,6 +175,15 @@ public final class AIProviderRegistry: AIProvider, AIEvaluationProvider, @unchec
         return try validateEvaluationModelVersion(
             evaluationProvider.evaluationModel(routedModelID)
         )
+    }
+
+    public func decisionModel(_ modelID: String) throws -> any AIDecisionModelV4 {
+        let (providerID, routedModelID) = try split(modelID, modelType: "decisionModel")
+        let provider = try provider(providerID, modelType: "decisionModel")
+        guard let decisionProvider = provider as? any AIDecisionProvider else {
+            throw AIError.unsupportedModel(provider: providerID, capability: .decision, modelID: routedModelID)
+        }
+        return try validateDecisionModelVersion(decisionProvider.decisionModel(routedModelID))
     }
 
     public func files(_ providerID: String) throws -> any AIFileClient {
@@ -289,7 +306,7 @@ public func experimentalCreateProviderRegistry(
     )
 }
 
-public final class AICustomProvider: AIFileProvider, AISkillsProvider, AIEvaluationProvider, @unchecked Sendable {
+public final class AICustomProvider: AIFileProvider, AISkillsProvider, AIEvaluationProvider, AIDecisionProvider, @unchecked Sendable {
     public let providerID: String
     public let supportedCapabilities: Set<ModelCapability>
 
@@ -301,6 +318,7 @@ public final class AICustomProvider: AIFileProvider, AISkillsProvider, AIEvaluat
     private let videoModels: [String: any VideoModel]
     private let rerankingModels: [String: any RerankingModel]
     private let evaluationModels: [String: AIEvaluationModelReference]
+    private let decisionModels: [String: AIDecisionModelReference]
     private let filesClient: (any AIFileClient)?
     private let skillsClient: (any AISkillsClient)?
     private let fallbackProvider: (any AIProvider)?
@@ -314,6 +332,7 @@ public final class AICustomProvider: AIFileProvider, AISkillsProvider, AIEvaluat
         speechModels: [String: any SpeechModel] = [:],
         videoModels: [String: any VideoModel] = [:],
         rerankingModels: [String: any RerankingModel] = [:],
+        decisionModels: [String: AIDecisionModelReference],
         evaluationModels: [String: AIEvaluationModelReference] = [:],
         files: (any AIFileClient)? = nil,
         skills: (any AISkillsClient)? = nil,
@@ -328,6 +347,7 @@ public final class AICustomProvider: AIFileProvider, AISkillsProvider, AIEvaluat
         self.videoModels = videoModels
         self.rerankingModels = rerankingModels
         self.evaluationModels = evaluationModels
+        self.decisionModels = decisionModels
         self.filesClient = files
         self.skillsClient = skills
         self.fallbackProvider = fallbackProvider
@@ -341,7 +361,26 @@ public final class AICustomProvider: AIFileProvider, AISkillsProvider, AIEvaluat
         if !videoModels.isEmpty { capabilities.insert(.video) }
         if !rerankingModels.isEmpty { capabilities.insert(.reranking) }
         if !evaluationModels.isEmpty { capabilities.insert(.evaluation) }
+        if !decisionModels.isEmpty { capabilities.insert(.decision) }
         self.supportedCapabilities = capabilities
+    }
+
+    /// Retains the evaluation-era initializer while decision maps are additive.
+    public convenience init(
+        providerID: String = "custom",
+        languageModels: [String: any LanguageModel] = [:],
+        embeddingModels: [String: any EmbeddingModel] = [:],
+        imageModels: [String: any ImageModel] = [:],
+        transcriptionModels: [String: any TranscriptionModel] = [:],
+        speechModels: [String: any SpeechModel] = [:],
+        videoModels: [String: any VideoModel] = [:],
+        rerankingModels: [String: any RerankingModel] = [:],
+        evaluationModels: [String: AIEvaluationModelReference] = [:],
+        files: (any AIFileClient)? = nil,
+        skills: (any AISkillsClient)? = nil,
+        fallbackProvider: (any AIProvider)? = nil
+    ) {
+        self.init(providerID: providerID, languageModels: languageModels, embeddingModels: embeddingModels, imageModels: imageModels, transcriptionModels: transcriptionModels, speechModels: speechModels, videoModels: videoModels, rerankingModels: rerankingModels, decisionModels: [:], evaluationModels: evaluationModels, files: files, skills: skills, fallbackProvider: fallbackProvider)
     }
 
     /// Source-compatible initializer retained from SwiftAISDK 1.7.0.
@@ -482,6 +521,14 @@ public final class AICustomProvider: AIFileProvider, AISkillsProvider, AIEvaluat
             return try validateEvaluationModelVersion(fallback.evaluationModel(modelID))
         }
         throw AIEvaluationModelResolutionError.noSuchModel(modelID: modelID)
+    }
+
+    public func decisionModel(_ modelID: String) throws -> any AIDecisionModelV4 {
+        if let reference = decisionModels[modelID] { return try resolveDecisionModel(reference) }
+        if let fallback = fallbackProvider as? any AIDecisionProvider {
+            return try validateDecisionModelVersion(fallback.decisionModel(modelID))
+        }
+        throw AIError.unsupportedModel(provider: providerID, capability: .decision, modelID: modelID)
     }
 
     public func files() throws -> any AIFileClient {
@@ -775,3 +822,23 @@ extension OpenAICompatibleProvider: AIFileProvider, AISkillsProvider {}
 extension AnthropicProvider: AIFileProvider, AISkillsProvider {}
 extension AnthropicAWSProvider: AIFileProvider, AISkillsProvider {}
 extension GoogleGenerativeAIProvider: AIFileProvider {}
+
+public func customProvider(
+    providerID: String = "custom",
+    languageModels: [String: any LanguageModel] = [:],
+    decisionModels: [String: AIDecisionModelReference],
+    fallbackProvider: (any AIProvider)? = nil
+) -> AICustomProvider {
+    AICustomProvider(providerID: providerID, languageModels: languageModels, decisionModels: decisionModels, fallbackProvider: fallbackProvider)
+}
+
+public extension AIProviders {
+    static func customProvider(
+        providerID: String = "custom",
+        languageModels: [String: any LanguageModel] = [:],
+        decisionModels: [String: AIDecisionModelReference],
+        fallbackProvider: (any AIProvider)? = nil
+    ) -> AICustomProvider {
+        AICustomProvider(providerID: providerID, languageModels: languageModels, decisionModels: decisionModels, fallbackProvider: fallbackProvider)
+    }
+}

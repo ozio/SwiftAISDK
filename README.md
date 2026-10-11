@@ -2,7 +2,7 @@
 
 SwiftAISDK is a SwiftPM port of the provider-facing parts of Vercel AI SDK.
 It provides provider factories plus an `AI` facade for text, durable batches,
-structured output, evaluation, embeddings, media, streaming and realtime audio, reranking,
+structured output, decisions, evaluation, embeddings, media, streaming and realtime audio, reranking,
 file operations, middleware, MCP tools, and typed tool execution.
 
 Licensed under the [Apache License 2.0](LICENSE). SwiftAISDK is an independent
@@ -543,12 +543,37 @@ duplex transport preserves Gateway auth/team subprotocols, splits large audio
 frames safely, and maps provider stream metadata and errors into the shared
 Swift lifecycle.
 
+## Decision V4
+
+`AI.experimentalDecide` answers typed Choice, Score and Boolean questions over
+ordered text, JSON and file evidence. OpenAI, Anthropic, Google, Gateway and
+TypeSafe AI expose `decisionModel(_:)`; registry and custom-provider routing
+support the same model reference.
+
+```swift
+let openAI = try AIProviders.openAI()
+let result = try await AI.experimentalDecide(
+    model: try openAI.decisionModel("gpt-6-luna"),
+    state: .parts([
+        .text("Assess this package."),
+        .json(["product": "glass vase"])
+    ]),
+    questions: ["damaged": .boolean(instructions: "Is there visible damage?")]
+)
+```
+
+URL evidence is downloaded and normalized before adapter execution. File
+support depends on the adapter: OpenAI supports image files, generic language
+adapters support images, and TypeSafe supports text/JSON. Refusals throw
+`AIDecisionRefusalError`. See the [Decision guide](https://ozio.github.io/SwiftAISDK/core/decide/).
+
 ## Evaluation V4
 
 `AI.experimentalEvaluate` evaluates Choice, Score, and Boolean questions over
-one shared JSON state. OpenAI, Anthropic, and Google adapt their structured
-language models; Gateway and TypeSafe AI can call native Evaluation V4 models
-directly.
+one shared JSON state and remains source compatible. New code can use Decision
+V4. Anthropic and Google adapt language models; OpenAI now uses `/decisions`,
+Gateway `/decision-model`, and TypeSafe `/systemone`. Custom endpoint mocks
+should update these experimental envelopes and the `decision` schema name.
 
 ```swift
 let anthropic = try AIProviders.anthropic()
@@ -691,7 +716,7 @@ let simulatedStream = wrapLanguageModel(model, middleware: simulateStreamingMidd
 
 ## MCP
 
-`MCPClient` mirrors the core of official `@ai-sdk/mcp@2.0.54`: initialize handshake,
+`MCPClient` mirrors the core of official `@ai-sdk/mcp@2.0.73`: initialize handshake,
 tool discovery, dynamic `AITool` conversion, resources, prompts, elicitation,
 HTTP/SSE transport, stdio transport, and OAuth helpers.
 OAuth providers can implement `authorize(resourceMetadataURL:scope:)` to receive
@@ -721,6 +746,11 @@ let answer = try await model.generateText(
     tools: LanguageToolOptions(Array(tools.values))
 )
 ```
+
+Experimental MCP Events adds typed catalog/subscriptions, direct durable stores
+or managed adapters, HMAC-verified callback handling, identity-preserving refresh
+and atomic cursor patches. Persist callback work before cursor commit; application
+deduplication is the caller's responsibility. See the [MCP Events guide](https://ozio.github.io/SwiftAISDK/cookbook/mcp-events/).
 
 Focused examples live in `Tests/SwiftAISDKTests/MCP*Tests.swift`.
 

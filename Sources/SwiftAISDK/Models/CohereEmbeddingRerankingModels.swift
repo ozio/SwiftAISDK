@@ -25,9 +25,10 @@ public final class CohereEmbeddingModel: EmbeddingModel, @unchecked Sendable {
                 values: request.values
             )
         }
+        let embeddingType = options["embeddingType"]?.stringValue ?? "float"
         var body: [String: JSONValue] = [
             "model": .string(modelID),
-            "embedding_types": .array(["float"]),
+            "embedding_types": .array([.string(embeddingType)]),
             "texts": .array(request.values),
             "input_type": options["inputType"] ?? options["input_type"] ?? .string("search_query")
         ]
@@ -40,13 +41,20 @@ public final class CohereEmbeddingModel: EmbeddingModel, @unchecked Sendable {
                 body["input_type"] = value
             case "outputDimension":
                 body["output_dimension"] = value
+            case "embeddingType":
+                body["embedding_types"] = .array([value])
             default:
                 body[key] = value
             }
         }
         let response = try await config.sendJSONResponse(path: "/embed", modelID: modelID, body: .object(body), headers: request.headers, abortSignal: request.abortSignal)
         let raw = response.json
-        let embeddings = raw["embeddings"]?["float"]?.arrayValue?.map { $0.arrayValue?.compactMap(\.doubleValue) ?? [] } ?? []
+        guard let vectors = raw["embeddings"]?[embeddingType]?.arrayValue,
+              vectors.allSatisfy({ $0.arrayValue?.allSatisfy { $0.doubleValue?.isFinite == true } == true }),
+              raw["meta"]?["billed_units"]?["input_tokens"]?.doubleValue != nil else {
+            throw AIError.invalidResponse(provider: providerID, message: "Invalid Cohere \(embeddingType) embedding response.")
+        }
+        let embeddings = vectors.map { $0.arrayValue!.compactMap(\.doubleValue) }
         return EmbeddingResult(
             embeddings: embeddings,
             usage: TokenUsage(totalTokens: raw["meta"]?["billed_units"]?["input_tokens"]?.intValue),
@@ -99,7 +107,7 @@ public final class CohereRerankingModel: RerankingModel, @unchecked Sendable {
     }
 }
 
-let cohereEmbeddingProviderOptionKeys: Set<String> = ["inputType", "truncate", "outputDimension"]
+let cohereEmbeddingProviderOptionKeys: Set<String> = ["embeddingType", "inputType", "truncate", "outputDimension"]
 let cohereRerankingProviderOptionKeys: Set<String> = ["maxTokensPerDoc", "priority"]
 
 func cohereEmbeddingProviderOptions(
@@ -173,6 +181,11 @@ func cohereValidateEmbeddingProviderOptions(_ options: [String: JSONValue]) thro
             throw AIError.invalidArgument(argument: "providerOptions.cohere.\(key)", message: "Cohere \(key) cannot be null.")
         }
         switch key {
+        case "embeddingType":
+            guard let string = value.stringValue, ["float", "int8", "uint8", "binary", "ubinary"].contains(string) else {
+                throw AIError.invalidArgument(argument: "providerOptions.cohere.embeddingType", message: "Cohere embeddingType must be float, int8, uint8, binary, or ubinary.")
+            }
+            output[key] = value
         case "inputType":
             guard let string = value.stringValue, ["search_document", "search_query", "classification", "clustering"].contains(string) else {
                 throw AIError.invalidArgument(argument: "providerOptions.cohere.inputType", message: "Cohere inputType must be one of search_document, search_query, classification, clustering.")
@@ -184,8 +197,8 @@ func cohereValidateEmbeddingProviderOptions(_ options: [String: JSONValue]) thro
             }
             output[key] = value
         case "outputDimension":
-            guard let number = value.doubleValue, [256, 512, 1024, 1536].contains(Int(number)), number == Double(Int(number)) else {
-                throw AIError.invalidArgument(argument: "providerOptions.cohere.outputDimension", message: "Cohere outputDimension must be one of 256, 512, 1024, 1536.")
+            guard let dimension = value.intValue, [256, 512, 768, 1024, 1536, 2048].contains(dimension), value.doubleValue == Double(dimension) else {
+                throw AIError.invalidArgument(argument: "providerOptions.cohere.outputDimension", message: "Cohere outputDimension must be one of 256, 512, 768, 1024, 1536, 2048.")
             }
             output[key] = value
         default:

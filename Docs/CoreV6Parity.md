@@ -1,20 +1,34 @@
 # Core V7 Parity
 
-Snapshot date: 2026-10-04
+Snapshot date: 2026-10-11
 
 This document tracks SwiftAISDK against the current AI SDK Core and Errors
 reference. It is intentionally high-level: product status belongs in
 `PortingStatus.md`, provider package drift belongs in `ProviderVersionLedger.md`,
 and provider behavior belongs in focused tests.
 Implementation-sensitive UI/chat items are also checked against npm source
-snapshots, currently `ai@7.0.127`, `@ai-sdk/provider@4.0.21`,
-`@ai-sdk/provider-utils@5.0.53`, and `@ai-sdk/react@4.0.130`.
+snapshots, currently `ai@7.0.137`, `@ai-sdk/provider@4.0.26`,
+`@ai-sdk/provider-utils@5.0.58`, and `@ai-sdk/react@4.0.140`.
 
 References:
 
 - <https://ai-sdk.dev/docs/reference/ai-sdk-core>
 - <https://ai-sdk.dev/docs/reference/ai-sdk-errors>
 - <https://ai-sdk.dev/docs/reference/ai-sdk-ui>
+
+## 2026-10-11 Native Parity
+
+Decision V4 adds `AI.experimentalDecide`, ordered text/JSON/file state, normalized media, strict answers/refusals, provider/registry routing and `ai.decide` telemetry. Legacy Evaluation calls retain their public signatures and JSON-array semantics; new ordered legacy state uses `stateParts:`. OpenAI now calls `/decisions`, Gateway `/decision-model`, and language-adapter schemas are named `decision`. Custom endpoint emulators must follow these experimental envelopes.
+
+Shared embedding dimensions validate before I/O, including empty batches, and provider overrides win. Raw usage is retained when summing one nonempty operand. Empty tool messages merge provider metadata. `AISerialJobExecutor.waitForIdle` covers nested and failed work. `AIReasoningDelimiters` supports literal opening/closing strings without treating them as regex. Default `AIAgent` stop conditions cap continuing loops at 20 steps and warn only when that default ends the loop; custom conditions and natural endings remain quiet.
+
+Stream terminal model parts stop first/chunk timers before postprocessing; total/step budgets continue to include application work. Explicit abort errors retain caller reason/name. Stable deprecation codes are console-deduplicated while custom loggers see each warning. Direct object generation/streaming warns; unified `Output` calls suppress their internal helper warnings.
+
+Native UI adds awaitable `stopAndWait`, `dispose` and transport `close`, cancellation-safe repeated resumes, schema/refiner-aware restored approvals and missing static-tool provenance. Successful unavailable static outputs are omitted; dynamic/error outputs and restored converters retain their distinct behavior. Browser HTTP/WebSocket wire protocols, explicit UI step boundaries and asynchronous JavaScript auto-send callback races remain deferred or runtime-specific.
+
+MCP Events provides typed catalog/subscription adapters, atomic patch stores, direct and managed creation, callback URL validation, pending/active/expired lifecycle, identity-preserving refresh, Standard Webhooks HMAC secret rotation/timestamps, body bounds, challenge handling and durable callbacks before cursor commit. OAuth invalid_grant retries only when the failed refresh generation is available. Deprecated EventSource transport changes do not imply a native legacy-SSE adapter.
+
+Published `provider-utils@5.0.58` still uses internal choice codes and `ai@7.0.137` strict choice-max validation. Monorepo exact-label/relaxed-rounding follow-ups are excluded. React runtime/declarations are unchanged apart from dependency propagation and remain outside this Swift-native package.
 
 ## 2026-10-04 Native Parity
 
@@ -31,6 +45,11 @@ Typed authorization-server mismatch errors; invalidation context captures the fa
 ## Latest Core Package Diff Notes
 
 Checked npm package diffs:
+
+- `ai@7.0.127 -> 7.0.137`
+- `@ai-sdk/provider@4.0.21 -> 4.0.26`
+- `@ai-sdk/provider-utils@5.0.53 -> 5.0.58`
+- `@ai-sdk/react@4.0.130 -> 4.0.140`
 
 - `ai@7.0.117 -> 7.0.127`
 - `@ai-sdk/provider@4.0.18 -> 4.0.21`

@@ -56,6 +56,7 @@ struct GoogleGenerateContentStreamState {
     private let includeRawChunks: Bool
     private let warnings: [AIWarning]
     private let toolNameMapping: AIToolNameMapping
+    private var jsonResponseConverter: GoogleJSONResponseToolStreamConverter?
     private var toolCalls = GoogleGenerateContentStreamingToolCalls()
     private var lastCodeExecutionToolCallID: String?
     private var lastServerToolCallID: String?
@@ -76,12 +77,15 @@ struct GoogleGenerateContentStreamState {
         includeRawChunks: Bool,
         modelID: String?,
         warnings: [AIWarning],
-        toolNameMapping: AIToolNameMapping = AIToolNameMapping()
+        toolNameMapping: AIToolNameMapping = AIToolNameMapping(),
+        jsonResponseToolName: String? = nil
     ) {
         self.responseMetadata = aiResponseMetadata(response: response, modelID: modelID)
         self.includeRawChunks = includeRawChunks
         self.warnings = warnings
         self.toolNameMapping = toolNameMapping
+        self.jsonResponseConverter = jsonResponseToolName.map(GoogleJSONResponseToolStreamConverter.init)
+        self.toolCalls = GoogleGenerateContentStreamingToolCalls(jsonResponseToolName: jsonResponseToolName)
     }
 
     mutating func apply(_ raw: JSONValue) -> [LanguageStreamPart] {
@@ -208,6 +212,10 @@ struct GoogleGenerateContentStreamState {
                 }
             }
             if let functionCall = contentPart["functionCall"] {
+                if jsonResponseConverter != nil {
+                    if let id = currentTextID { parts.append(.textEnd(id: id)); currentTextID = nil }
+                    if let id = currentReasoningID { parts.append(.reasoningEnd(id: id)); currentReasoningID = nil }
+                }
                 sawToolCalls = true
                 parts.append(contentsOf: toolCalls.apply(functionCall: functionCall, rawValue: contentPart))
             }
@@ -250,7 +258,7 @@ struct GoogleGenerateContentStreamState {
         if let reason = raw["candidates"]?[0]?["finishReason"]?.stringValue {
             latestFinishReason = reason
         }
-        return parts
+        return convertJSONResponseParts(parts)
     }
 
     mutating func finish() -> [LanguageStreamPart] {
@@ -278,6 +286,57 @@ struct GoogleGenerateContentStreamState {
             ) ?? "other"
         let providerMetadata = googleFinalizeGenerateContentProviderMetadata(latestProviderMetadata)
         parts.append(.finishMetadata(reason: finishReason, usage: latestUsage, providerMetadata: providerMetadata))
-        return parts
+        return convertJSONResponseParts(parts)
+    }
+
+    private mutating func convertJSONResponseParts(_ parts: [LanguageStreamPart]) -> [LanguageStreamPart] {
+        guard var converter = jsonResponseConverter else { return parts }
+        let converted = parts.flatMap { converter.apply($0) }
+        jsonResponseConverter = converter
+        return converted
+    }
+}
+
+/// Matches the provider-utils response-tool conversion while preserving the
+/// Swift streaming adapter's legacy tool-call delta events for application tools.
+private struct GoogleJSONResponseToolStreamConverter {
+    let name: String
+    private var responseIDs: Set<String> = []
+    private var IDsWithDeltas: Set<String> = []
+    private var hasResponseTool = false
+    private var hasApplicationTool = false
+
+    init(_ name: String) { self.name = name }
+
+    mutating func apply(_ part: LanguageStreamPart) -> [LanguageStreamPart] {
+        switch part {
+        case .textStart, .textDelta, .textDeltaPart, .textEnd:
+            return []
+        case let .toolInputStart(id, toolName, _, _, _, metadata) where toolName == name:
+            responseIDs.insert(id)
+            return [.textStart(id: id, providerMetadata: metadata)]
+        case let .toolInputDelta(id, delta, metadata) where responseIDs.contains(id):
+            if !delta.isEmpty { IDsWithDeltas.insert(id) }
+            return [.textDeltaPart(id: id, delta: delta, providerMetadata: metadata)]
+        case let .toolInputEnd(id, _) where responseIDs.contains(id):
+            return []
+        case let .toolCallDelta(id, toolName, _, _) where toolName == name || (id.map(responseIDs.contains) ?? false):
+            return []
+        case let .toolCall(call) where call.name == name:
+            var result: [LanguageStreamPart] = []
+            if !IDsWithDeltas.contains(call.id) {
+                result.append(.textDeltaPart(id: call.id, delta: call.arguments, providerMetadata: call.providerMetadata))
+            }
+            result.append(.textEnd(id: call.id, providerMetadata: call.providerMetadata))
+            hasResponseTool = true
+            return result
+        case let .toolCall(call):
+            if !call.providerExecuted { hasApplicationTool = true }
+        case let .finishMetadata(reason, usage, metadata) where hasResponseTool && !hasApplicationTool && reason == "tool-calls":
+            return [.finishMetadata(reason: "stop", usage: usage, providerMetadata: metadata)]
+        default:
+            break
+        }
+        return [part]
     }
 }

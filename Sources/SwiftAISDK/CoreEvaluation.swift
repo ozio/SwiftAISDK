@@ -110,6 +110,7 @@ public struct AIEvaluationResponseMetadata: Equatable, Sendable {
 /// Options passed to an Evaluation Model V4 implementation.
 public struct AIEvaluationModelV4CallOptions: Sendable {
     public var state: JSONValue
+    public var stateParts: [AIDecisionStatePart]?
     public var questions: [String: AIEvaluationQuestion]
     public var abortSignal: AIAbortSignal?
     public var headers: [String: String]
@@ -123,10 +124,23 @@ public struct AIEvaluationModelV4CallOptions: Sendable {
         providerOptions: [String: JSONValue] = [:]
     ) {
         self.state = state
+        self.stateParts = nil
         self.questions = questions
         self.abortSignal = abortSignal
         self.headers = headers
         self.providerOptions = providerOptions
+    }
+}
+
+public extension AIEvaluationModelV4CallOptions {
+    /// Ordered state overload retaining the original JSON-state initializer.
+    init(stateParts: [AIDecisionStatePart], questions: [String: AIEvaluationQuestion], abortSignal: AIAbortSignal? = nil, headers: [String: String] = [:], providerOptions: [String: JSONValue] = [:]) {
+        self.init(state: .string(""), questions: questions, abortSignal: abortSignal, headers: headers, providerOptions: providerOptions)
+        self.stateParts = stateParts
+    }
+
+    internal var decisionOptions: AIDecisionModelV4CallOptions {
+        AIDecisionModelV4CallOptions(state: stateParts ?? legacyEvaluationState(state), questions: questions, abortSignal: abortSignal, headers: headers, providerOptions: providerOptions)
     }
 }
 
@@ -473,7 +487,7 @@ private func isEvaluationInput(_ value: JSONValue) -> Bool {
     }
 }
 
-private func isFiniteJSON(_ value: JSONValue) -> Bool {
+func isFiniteJSON(_ value: JSONValue) -> Bool {
     switch value {
     case .string, .bool, .null:
         true

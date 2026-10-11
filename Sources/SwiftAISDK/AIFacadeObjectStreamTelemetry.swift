@@ -18,6 +18,7 @@ func objectStreamWithTelemetry<Object: Sendable>(
 
     return AsyncThrowingStream { continuation in
         let task = Task {
+            await AIDeprecationLogging.objectWarning("streamObject")
             var text = ""
             var partialCount = 0
             var objectResult: ObjectGenerationResult<Object>?

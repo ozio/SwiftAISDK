@@ -19,9 +19,25 @@ Source URL: /providers/azure/
 - Transcription
 - Speech
 
+## MAI image generation and editing
+
+```swift
+let azure = try AIProviders.azure(resourceName: "my-resource")
+let image = try azure.imageModel("mai-image-2.5")
+let result = try await image.generateImage(.init(
+    prompt: "A watercolor mountain village",
+    aspectRatio: "16:9"
+))
+print(result.base64Images.count)
+```
+
+MAI image models use their own `/images/generations` and `/images/edits` routes, aspect-ratio/pixel-budget sizing, reference-image uploads and Azure/Entra authentication. `AzureOpenAIAudioSettings.maiBaseURL` configures a custom MAI host. The image request's `files` selects editing; unsupported masks warn. Unknown deployment IDs can opt into `providerOptions.azure.api: "mai"`.
+
+Speech reset errors retain the original 502 wire response but report a nonretryable typed 400 with voice guidance, avoiding retries for an invalid voice. Azure OpenAI image models keep their existing route.
+
 ## Notes
 
-Azure OpenAI mirrors upstream 4.0.90: `AZURE_API_KEY` or per-request Microsoft Entra token provider auth, `AZURE_RESOURCE_NAME`, versioned user-agent suffix, Responses as default callable/language surface, chat/deepseek/completion/embedding/textEmbedding/image/transcription/speech aliases, Azure provider metadata namespace, deployment-based transcription URLs, Azure OpenAI base URLs with `/v1` and `api-version`, custom non-Azure gateway base URLs used as-is, DeepSeek reasoning mapping without thinking support, OpenAI option namespace mapping, Azure content-filter placeholder metadata suppression, and Azure-specific hosted tool helpers. The 4.0.63 pass normalizes Azure OpenAI, Foundry, Cognitive Services, custom gateway, deployment, and `/v1` URL shapes without duplicating `/v1` or `api-version`, and inherits the shared OpenAI GPT-6 request behavior. Files V4 remains exposed by the OpenAI and xAI file clients. The 2026-09-27 pass inherits strict-false function tools and validated, positioned GPT-6 reasoning-effort updates from the shared OpenAI Responses path. The 2026-10-04 pass adds MAI Voice 2/2.1 and Flash Speech synthesis with SSML/style/voice/format handling, MAI Transcribe 1.5/2 file transcription with timed phrase metadata, and MAI Transcribe 2 streaming over an injectable cancellable WebSocket. AzureOpenAIAudioSettings configures separate Speech/MAI base URLs. Entra auth applies to both audio hosts; generated resource names must be single DNS labels. Azure image file/mask capabilities are unknown.
+Azure OpenAI mirrors upstream 4.0.99: `AZURE_API_KEY` or per-request Microsoft Entra token provider auth, `AZURE_RESOURCE_NAME`, versioned user-agent suffix, Responses as default callable/language surface, chat/deepseek/completion/embedding/textEmbedding/image/transcription/speech aliases, Azure provider metadata namespace, deployment-based transcription URLs, Azure OpenAI base URLs with `/v1` and `api-version`, custom non-Azure gateway base URLs used as-is, DeepSeek reasoning mapping without thinking support, OpenAI option namespace mapping, Azure content-filter placeholder metadata suppression, and Azure-specific hosted tool helpers. The 4.0.63 pass normalizes Azure OpenAI, Foundry, Cognitive Services, custom gateway, deployment, and `/v1` URL shapes without duplicating `/v1` or `api-version`, and inherits the shared OpenAI GPT-6 request behavior. Files V4 remains exposed by the OpenAI and xAI file clients. The 2026-09-27 pass inherits strict-false function tools and validated, positioned GPT-6 reasoning-effort updates from the shared OpenAI Responses path. The 2026-10-04 pass adds MAI Voice 2/2.1 and Flash Speech synthesis with SSML/style/voice/format handling, MAI Transcribe 1.5/2 file transcription with timed phrase metadata, and MAI Transcribe 2 streaming over an injectable cancellable WebSocket. AzureOpenAIAudioSettings configures separate Speech/MAI base URLs. Entra auth applies to both audio hosts; generated resource names must be single DNS labels. Azure image file/mask capabilities are unknown. The 2026-10-11 pass: MAI Image supports generation and image editing, multiple references and grouped results, API-key or Entra auth, and native error handling; the OpenAI image path remains available.
 
 Factory argument requirements are defined by the public Swift factory signatures. Use [Public symbols](/reference/generated/public-symbols/) when you need the exact initializer or factory declaration.
 

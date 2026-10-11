@@ -467,10 +467,12 @@ func openAIResponsesToolResult(from item: JSONValue, providerID: String, toolCal
     guard let type = item["type"]?.stringValue else { return nil }
     switch type {
     case "web_search_call":
+        let isError = item["status"]?.stringValue == "failed" || item["status"]?.stringValue == "incomplete"
         return AIToolResult(
             toolCallID: item["id"]?.stringValue ?? "web-search-call",
             toolName: toolNameAliases["web_search"] ?? "web_search",
-            result: openAIResponsesWebSearchResult(from: item["action"], providerID: providerID)
+            result: isError ? .object(["status": item["status"] ?? .null]) : openAIResponsesWebSearchResult(from: item["action"], providerID: providerID),
+            isError: isError
         )
     case "computer_call":
         guard item["call_id"]?.stringValue == nil else { return nil }

@@ -79,6 +79,213 @@ public func safeValidateUIMessages(_ messages: [AIUIMessage]) -> AIUIMessageVali
     return AIUIMessageValidationResult(messages: messages, issues: issues)
 }
 
+/// Validates current static tool schemas and normalizes unavailable terminal history.
+@discardableResult
+public func validateUIMessages(
+    _ messages: [AIUIMessage],
+    toolSchemas: [String: AIUIMessageToolSchema]
+) throws -> [AIUIMessage] {
+    let result = safeValidateUIMessages(messages, toolSchemas: toolSchemas)
+    guard result.isValid else {
+        throw AIUIMessageStreamError(message: "Invalid UI messages.", validationIssues: result.issues)
+    }
+    return result.messages
+}
+
+/// Missing terminal static tools retain explicit provenance for safe conversion.
+public func safeValidateUIMessages(
+    _ messages: [AIUIMessage],
+    toolSchemas: [String: AIUIMessageToolSchema]
+) -> AIUIMessageValidationResult {
+    safeValidateUIMessages(messages, toolSchemas: toolSchemas, reconstructedInputs: [:])
+}
+
+/// Reconstructs preserved approval inputs with the current native tool refiners.
+public func safeValidateUIMessages(
+    _ messages: [AIUIMessage],
+    toolSchemas: [String: AIUIMessageToolSchema],
+    refineToolInput: [String: AIUIMessageToolInputRefiner]
+) async -> AIUIMessageValidationResult {
+    let originalInputs = preservedApprovalInputs(in: messages)
+    var reconstructed: [String: AIUIMessageReconstructedInput] = [:]
+    for message in messages {
+        for part in message.parts {
+            guard case let .toolCall(call) = part, !call.dynamic,
+                  let original = originalInputs[call.id],
+                  let schema = toolSchemas[call.name],
+                  let refine = refineToolInput[call.name] else { continue }
+            do {
+                try AIJSONSchemaValidator.validate(original, schema: schema.inputSchema)
+            } catch {
+                continue
+            }
+            do {
+                reconstructed[call.id] = .value(try await refine(original))
+            } catch {
+                reconstructed[call.id] = .failure(String(describing: error))
+            }
+        }
+    }
+    return safeValidateUIMessages(messages, toolSchemas: toolSchemas, reconstructedInputs: reconstructed)
+}
+
+@discardableResult
+public func validateUIMessages(
+    _ messages: [AIUIMessage],
+    toolSchemas: [String: AIUIMessageToolSchema],
+    refineToolInput: [String: AIUIMessageToolInputRefiner]
+) async throws -> [AIUIMessage] {
+    let result = await safeValidateUIMessages(messages, toolSchemas: toolSchemas, refineToolInput: refineToolInput)
+    guard result.isValid else {
+        throw AIUIMessageStreamError(message: "Invalid UI messages.", validationIssues: result.issues)
+    }
+    return result.messages
+}
+
+private enum AIUIMessageReconstructedInput {
+    case value(JSONValue)
+    case failure(String)
+}
+
+private struct AIUIMessageInputReconstructionError: Error, CustomStringConvertible {
+    let description: String
+}
+
+private func preservedApprovalInputs(in messages: [AIUIMessage]) -> [String: JSONValue] {
+    var inputs: [String: JSONValue] = [:]
+    for message in messages {
+        for part in message.parts {
+            guard case let .toolApprovalRequest(request) = part,
+                  let callID = request.toolCallID,
+                  let input = request.inputSchemaInput else { continue }
+            inputs[callID] = input
+        }
+    }
+    return inputs
+}
+
+private func safeValidateUIMessages(
+    _ messages: [AIUIMessage],
+    toolSchemas: [String: AIUIMessageToolSchema],
+    reconstructedInputs: [String: AIUIMessageReconstructedInput]
+) -> AIUIMessageValidationResult {
+    var normalized = messages
+    var issues: [AIUIMessageValidationIssue] = []
+    let originalInputs = preservedApprovalInputs(in: messages)
+    var results: [String: (value: AIToolResult, path: String)] = [:]
+    var approvalCalls: [String: String] = [:]
+    var deniedApprovalIDs: Set<String> = []
+
+    for (messageIndex, message) in messages.enumerated() {
+        for (partIndex, part) in message.parts.enumerated() {
+            switch part {
+            case let .toolResult(result):
+                results[result.toolCallID] = (result, "messages[\(messageIndex)].parts[\(partIndex)].toolResult.result")
+            case let .toolApprovalRequest(request):
+                if let callID = request.toolCallID { approvalCalls[request.id] = callID }
+            case let .toolApprovalResponse(response) where !response.approved:
+                deniedApprovalIDs.insert(response.id)
+            default: break
+            }
+        }
+    }
+    let deniedCallIDs = Set(deniedApprovalIDs.compactMap { approvalCalls[$0] })
+    var newlyUnavailable: Set<String> = []
+
+    for (messageIndex, message) in messages.enumerated() {
+        for (partIndex, part) in message.parts.enumerated() {
+            guard case let .toolCall(call) = part, !call.dynamic else { continue }
+            let path = "messages[\(messageIndex)].parts[\(partIndex)].toolCall.arguments"
+            let resultInfo = results[call.id]
+            let result = resultInfo?.value
+            let terminal = result != nil || deniedCallIDs.contains(call.id)
+            guard let schema = toolSchemas[call.name] else {
+                if terminal {
+                    newlyUnavailable.insert(call.id)
+                } else {
+                    issues.append(.init(path: path, message: "No tool schema found for tool '\(call.name)'."))
+                }
+                continue
+            }
+
+            let input: JSONValue
+            do {
+                input = call.arguments.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    ? .object([:])
+                    : try secureJSONParse(call.arguments)
+            } catch {
+                // Native argument strings must remain valid JSON, including failed calls.
+                continue
+            }
+            do {
+                let original = originalInputs[call.id]
+                try AIJSONSchemaValidator.validate(original ?? input, schema: schema.inputSchema)
+                if let original {
+                    switch reconstructedInputs[call.id] ?? .value(original) {
+                    case let .failure(message):
+                        throw AIUIMessageInputReconstructionError(description: message)
+                    case let .value(reconstructed) where reconstructed != input:
+                        throw AIUIMessageInputReconstructionError(
+                            description: "Tool input does not match the output reconstructed from inputSchemaInput."
+                        )
+                    case .value: break
+                    }
+                }
+            } catch {
+                if result?.isError == true || (result != nil && input.objectValue?.isEmpty == true) {
+                    newlyUnavailable.insert(call.id)
+                } else {
+                    issues.append(.init(path: path, message: String(describing: error)))
+                }
+            }
+            if let result, !result.isError, let outputSchema = schema.outputSchema {
+                do {
+                    try AIJSONSchemaValidator.validate(result.result, schema: outputSchema)
+                } catch {
+                    issues.append(.init(path: resultInfo?.path ?? path, message: String(describing: error)))
+                }
+            }
+        }
+    }
+
+    for messageIndex in normalized.indices {
+        for partIndex in normalized[messageIndex].parts.indices {
+            switch normalized[messageIndex].parts[partIndex] {
+            case var .toolCall(call) where newlyUnavailable.contains(call.id):
+                call.dynamic = true
+                normalized[messageIndex].parts[partIndex] = .toolCall(call)
+                normalized[messageIndex].unavailableStaticToolCallIDs.insert(call.id)
+            case var .toolResult(result) where newlyUnavailable.contains(result.toolCallID):
+                result.dynamic = true
+                normalized[messageIndex].parts[partIndex] = .toolResult(result)
+                normalized[messageIndex].unavailableStaticToolCallIDs.insert(result.toolCallID)
+            default: break
+            }
+        }
+    }
+    let structural = safeValidateUIMessages(normalized)
+    issues.append(contentsOf: structural.issues)
+    return AIUIMessageValidationResult(messages: normalized, issues: issues)
+}
+
+/// Validates ephemeral agent tool history, including terminal calls to removed tools.
+@discardableResult
+public func validateUIMessagesForAgent(
+    _ messages: [AIUIMessage],
+    toolSchemas: [String: AIUIMessageToolSchema] = [:]
+) throws -> [AIUIMessage] {
+    try validateUIMessages(messages, toolSchemas: toolSchemas)
+}
+
+@discardableResult
+public func validateUIMessagesForAgent(
+    _ messages: [AIUIMessage],
+    toolSchemas: [String: AIUIMessageToolSchema] = [:],
+    refineToolInput: [String: AIUIMessageToolInputRefiner]
+) async throws -> [AIUIMessage] {
+    try await validateUIMessages(messages, toolSchemas: toolSchemas, refineToolInput: refineToolInput)
+}
+
 private func firstToolApprovalValidationError(in messages: [AIUIMessage]) -> (any Error)? {
     var toolCallIDs: Set<String> = []
     var approvalRequestIDs: Set<String> = []

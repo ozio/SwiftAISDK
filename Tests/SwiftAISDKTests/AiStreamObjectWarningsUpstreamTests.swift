@@ -102,6 +102,7 @@ import Testing
     }
 
     #expect(await recorder.events() == [
+        AIWarningLogEvent(warnings: [AIWarning(type: "deprecated", setting: "streamObject", message: "Use streamText with an output setting instead.")]),
         AIWarningLogEvent(warnings: expectedWarnings, providerID: "mock", modelID: "mock-language")
     ])
 }
@@ -129,6 +130,7 @@ import Testing
     }
 
     #expect(await recorder.events() == [
+        AIWarningLogEvent(warnings: [AIWarning(type: "deprecated", setting: "streamObject", message: "Use streamText with an output setting instead.")]),
         AIWarningLogEvent(warnings: [], providerID: "mock", modelID: "mock-language")
     ])
 }

@@ -1,8 +1,8 @@
 import Foundation
 
-public final class AnthropicProvider: AIProvider, AIEvaluationProvider, @unchecked Sendable {
+public final class AnthropicProvider: AIProvider, AIEvaluationProvider, AIDecisionProvider, @unchecked Sendable {
     public let providerID = "anthropic"
-    public let supportedCapabilities: Set<ModelCapability> = [.language, .evaluation]
+    public let supportedCapabilities: Set<ModelCapability> = [.language, .evaluation, .decision]
     private let config: ModelHTTPConfig
     private let languageProviderID: String
     private let skillsProviderID: String
@@ -21,7 +21,7 @@ public final class AnthropicProvider: AIProvider, AIEvaluationProvider, @uncheck
             }
             headers["x-api-key"] = headers["x-api-key"] ?? key
         }
-        headers = withUserAgentSuffix(headers, "ai-sdk-anthropic/4.0.71")
+        headers = withUserAgentSuffix(headers, "ai-sdk-anthropic/4.0.78")
         headers["anthropic-version"] = headers["anthropic-version"] ?? "2023-06-01"
         languageProviderID = settings.name ?? "anthropic.messages"
         skillsProviderID = anthropicSkillsProviderID(from: languageProviderID)
@@ -33,7 +33,8 @@ public final class AnthropicProvider: AIProvider, AIEvaluationProvider, @uncheck
             includeUsage: settings.includeUsage,
             queryParams: settings.queryParams,
             supportsStructuredOutputs: settings.supportsStructuredOutputs,
-            transformRequestBody: settings.transformRequestBody
+            transformRequestBody: settings.transformRequestBody,
+            batchResultMaxLineBytes: settings.batchResultDownloads?.maxLineBytes
         )
     }
 
@@ -47,6 +48,17 @@ public final class AnthropicProvider: AIProvider, AIEvaluationProvider, @uncheck
             model: AnthropicBatchLanguageModel(modelID: modelID, config: config.withProviderID(languageProviderID)),
             providerID: anthropicEvaluationProviderID(from: languageProviderID)
         )
+    }
+
+    public func decisionModel(_ modelID: String) throws -> any AIDecisionModelV4 {
+        DecisionLanguageModel(
+            model: try languageModel(modelID),
+            providerID: String(anthropicEvaluationProviderID(from: languageProviderID).dropLast(".evaluation".count)) + ".decision"
+        )
+    }
+
+    public func experimentalDecisionModel(_ modelID: String) throws -> any AIDecisionModelV4 {
+        try decisionModel(modelID)
     }
 
     public func messages(_ modelID: String) throws -> any BatchLanguageModel {

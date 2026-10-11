@@ -1,7 +1,7 @@
 import Foundation
 
 /// The published `@ai-sdk/typesafe-ai` package version mirrored by this port.
-public let typeSafeAIProviderVersion = "3.0.12"
+public let typeSafeAIProviderVersion = "3.0.17"
 
 /// Creates a TypeSafe AI provider using the same defaults as
 /// `createTypeSafeAi` from `@ai-sdk/typesafe-ai`.
@@ -28,10 +28,10 @@ public let typeSafeAI = TypeSafeAIProvider()
 /// Exact-casing alias for upstream `typeSafeAi`.
 public let typeSafeAi = typeSafeAI
 
-/// TypeSafe AI's evaluation-only Provider V4 surface.
-public final class TypeSafeAIProvider: AIProvider, AIEvaluationProvider, @unchecked Sendable {
+/// TypeSafe AI's Decision and legacy Evaluation Provider V4 surfaces.
+public final class TypeSafeAIProvider: AIProvider, AIEvaluationProvider, AIDecisionProvider, @unchecked Sendable {
     public let providerID = "typesafe"
-    public let supportedCapabilities: Set<ModelCapability> = [.evaluation]
+    public let supportedCapabilities: Set<ModelCapability> = [.evaluation, .decision]
 
     private let configuration: TypeSafeAIEvaluationModelConfiguration
 
@@ -45,6 +45,14 @@ public final class TypeSafeAIProvider: AIProvider, AIEvaluationProvider, @unchec
             transport: settings.transport
         )
     }
+
+    public func decisionModel(_ modelID: String) throws -> any AIDecisionModelV4 {
+        var config = configuration
+        config.providerID = "typesafe.decision"
+        return TypeSafeAIDecisionModel(modelID: modelID, configuration: config)
+    }
+
+    public func decision(_ modelID: String) throws -> any AIDecisionModelV4 { try decisionModel(modelID) }
 
     public func evaluationModel(_ modelID: String) throws -> any AIEvaluationModelV4 {
         TypeSafeAIEvaluationModel(modelID: modelID, configuration: configuration)

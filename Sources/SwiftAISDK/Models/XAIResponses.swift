@@ -403,6 +403,14 @@ private func xaiResponsesTools(from tools: [String: JSONValue], toolChoice: JSON
                 providerToolNames.insert(name)
                 providerToolNames.insert(toolName)
             case "xai.x_search":
+                let args = object["args"]?.objectValue ?? [:]
+                for key in ["allowedXHandles", "excludedXHandles"] {
+                    if let handles = args[key] {
+                        guard let array = handles.arrayValue, array.count <= 20, array.allSatisfy({ $0.stringValue != nil }) else {
+                            throw AIError.invalidArgument(argument: "tools.\(name).\(key)", message: "xAI \(key) must contain at most 20 strings.")
+                        }
+                    }
+                }
                 output.append(.object(xaiResponsesSnakeCasedTool(type: "x_search", args: object["args"]?.objectValue ?? [:], keys: ["allowedXHandles", "excludedXHandles", "fromDate", "toDate", "enableImageUnderstanding", "enableVideoUnderstanding"])))
                 providerToolNames.insert(name)
                 providerToolNames.insert(toolName)

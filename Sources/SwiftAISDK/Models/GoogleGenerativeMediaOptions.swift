@@ -396,6 +396,7 @@ func googleOptionsWithoutPoll(_ options: [String: JSONValue], excluding keys: Se
 }
 
 func googleAspectRatio(from request: ImageGenerationRequest) -> String? {
+    if let aspectRatio = request.aspectRatio { return aspectRatio }
     if let aspectRatio = request.extraBody["aspectRatio"]?.stringValue {
         return aspectRatio
     }

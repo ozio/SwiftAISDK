@@ -42,6 +42,16 @@ private func groqStreamErrorMetadata(
 func groqPreparedCall(for request: LanguageModelRequest, modelID: String, stream: Bool) throws -> GroqPreparedCall {
     var options = try groqProviderOptions(from: request)
     let responseFormat = groqResolvedResponseFormat(request: request, options: &options)
+    var tools = request.tools
+    var jsonResponseToolName: String?
+    if responseFormat?["type"] == "json", let schema = responseFormat?["schema"], schema != .null,
+       tools.contains(where: { $0.value["type"] != "provider" && $0.value["id"] == nil && $0.key != "groq.browser_search" }) {
+        var name = "json"
+        var suffix = 1
+        while tools[name] != nil { name = "json_\(suffix)"; suffix += 1 }
+        tools[name] = schema
+        jsonResponseToolName = name
+    }
     var body: [String: JSONValue] = [
         "model": .string(modelID),
         "messages": .array(try request.messages.flatMap(groqMessageJSON))
@@ -54,22 +64,36 @@ func groqPreparedCall(for request: LanguageModelRequest, modelID: String, stream
     if let seed = request.seed { body["seed"] = .number(Double(seed)) }
     if let maxOutputTokens = request.maxOutputTokens { body["max_tokens"] = .number(Double(maxOutputTokens)) }
     if !request.stopSequences.isEmpty { body["stop"] = .array(request.stopSequences) }
-    let preparedTools = groqTools(from: request.tools, modelID: modelID)
+    var preparedTools = groqTools(from: tools, modelID: modelID)
+    if let name = jsonResponseToolName {
+        preparedTools.tools = preparedTools.tools.map { tool in
+            guard tool["function"]?["name"] == .string(name), var function = tool["function"]?.objectValue else { return tool }
+            function["description"] = responseFormat?["description"] ?? "Respond with a JSON object."
+            return .object(["type": "function", "function": .object(function)])
+        }
+    }
     if !preparedTools.tools.isEmpty {
         body["tools"] = .array(preparedTools.tools)
-        if let toolChoice = groqToolChoice(from: request.toolChoice ?? options["toolChoice"]) {
+        var choice = request.toolChoice ?? options["toolChoice"]
+        if let name = jsonResponseToolName, choice?["type"] != "tool" {
+            let disabled = choice == "none" || choice?["type"] == "none"
+            choice = disabled ? .object(["type": "tool", "toolName": .string(name)]) : "required"
+        }
+        if let toolChoice = groqToolChoice(from: choice) {
             body["tool_choice"] = toolChoice
         }
     }
-    if let responseFormat {
+    if let responseFormat, jsonResponseToolName == nil {
         body["response_format"] = groqResponseFormat(from: responseFormat, options: options)
     }
     body.merge(groqLanguageOptions(from: options)) { _, new in new }
-    var warnings = groqWarnings(request: request, responseFormat: responseFormat, options: options)
+    if jsonResponseToolName != nil { body["parallel_tool_calls"] = false }
+    var warnings = groqWarnings(request: request, responseFormat: jsonResponseToolName == nil ? responseFormat : nil, options: options)
     groqApplyReasoning(request.reasoning, modelID: modelID, to: &body, warnings: &warnings)
     return GroqPreparedCall(
         body: body,
-        warnings: warnings + preparedTools.warnings
+        warnings: warnings + preparedTools.warnings,
+        jsonResponseToolName: jsonResponseToolName
     )
 }
 
@@ -335,7 +359,7 @@ func groqReasoningEffort(_ value: String) -> String {
     switch value {
     case "minimal":
         return "low"
-    case "xhigh":
+    case "xhigh", "max":
         return "high"
     default:
         return value
@@ -367,7 +391,8 @@ func groqApplyReasoning(_ reasoning: String?, modelID: String, to body: inout [S
             "low": "low",
             "medium": "medium",
             "high": "high",
-            "xhigh": "high"
+            "xhigh": "high",
+            "max": "high"
         ],
         warnings: &warnings
     ) {

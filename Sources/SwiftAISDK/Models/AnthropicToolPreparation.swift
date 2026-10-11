@@ -36,7 +36,7 @@ func anthropicPrepareTools(
             if let strict = inputSchema?.removeValue(forKey: "strict")?.boolValue {
                 if supportsStrictTools {
                     tool["strict"] = .bool(strict)
-                } else {
+                } else if strict {
                     prepared.warnings.append(AIWarning(
                         type: "unsupported",
                         feature: "strict",

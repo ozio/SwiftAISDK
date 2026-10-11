@@ -301,6 +301,7 @@ func openResponsesToolResultOutput(
     providerID: String,
     providerOptionsName: String? = nil,
     jsonEncodeText: Bool = false,
+    wrapToolErrors: Bool = false,
     promptCacheBreakpoint: JSONValue? = nil,
     warnings: inout [AIWarning]
 ) -> JSONValue {
@@ -320,13 +321,22 @@ func openResponsesToolResultOutput(
     if let object = (result.modelOutput ?? result.result).objectValue,
        let type = object["type"]?.stringValue {
         switch type {
-        case "text", "error-text":
+        case "text":
             let text = object["value"]?.stringValue ?? ""
             return scalarOutput(jsonEncodeText ? (openAIResponsesJSONString(.string(text)) ?? "\"\"") : text)
         case "execution-denied":
             let text = object["reason"]?.stringValue ?? "Tool call execution denied."
             return scalarOutput(jsonEncodeText ? (openAIResponsesJSONString(.string(text)) ?? "\"\"") : text)
-        case "json", "error-json":
+        case "error-text", "error-json":
+            if wrapToolErrors || isOpenAIBackedProvider(providerID) {
+                return scalarOutput(openAIResponsesJSONString(.object(["error": object["value"] ?? .null])) ?? "")
+            }
+            if type == "error-text" {
+                let text = object["value"]?.stringValue ?? ""
+                return scalarOutput(jsonEncodeText ? (openAIResponsesJSONString(.string(text)) ?? "\"\"") : text)
+            }
+            return scalarOutput(openAIResponsesJSONString(object["value"] ?? .object([:])) ?? "")
+        case "json":
             return scalarOutput(openAIResponsesJSONString(object["value"] ?? .object([:])) ?? "")
         case "content":
             let content = object["value"]?.arrayValue ?? []

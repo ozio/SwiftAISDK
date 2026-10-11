@@ -78,7 +78,7 @@ public final class AnthropicAWSProvider: AIProvider, @unchecked Sendable {
         var headers = settings.headers
         headers["anthropic-version"] = headers["anthropic-version"] ?? "2023-06-01"
         headers["anthropic-workspace-id"] = headers["anthropic-workspace-id"] ?? workspaceID
-        headers = withUserAgentSuffix(headers, "ai-sdk-anthropic-aws/2.0.63")
+        headers = withUserAgentSuffix(headers, "ai-sdk-anthropic-aws/2.0.71")
 
         let transport: any AITransport
         if let apiKey = settings.apiKey ?? environmentValue(["ANTHROPIC_AWS_API_KEY"]) {

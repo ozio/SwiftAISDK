@@ -19,6 +19,7 @@ struct AzureAudioConfig: Sendable {
     var apiKey: String?
     var headers: [String: String]
     var transport: any AITransport
+    var downloadTransport: any AITransport
     var tokenProvider: AzureOpenAITokenProvider?
 
     func baseURL(api: String) throws -> String {
@@ -34,7 +35,7 @@ struct AzureAudioConfig: Sendable {
 
     func requestHeaders(api: String) -> [String: String] {
         let authentication = tokenProvider == nil ? apiKey.map { [api == "speech" ? "Ocp-Apim-Subscription-Key" : "api-key": $0] } ?? [:] : [:]
-        return withUserAgentSuffix(authentication.mergingHeaders(headers), "ai-sdk-azure/4.0.90")
+        return withUserAgentSuffix(authentication.mergingHeaders(headers), "ai-sdk-azure/4.0.99")
     }
 }
 
@@ -101,7 +102,7 @@ public final class AzureSpeechModel: SpeechModel, @unchecked Sendable {
                 ?? (voiceReset ? "Azure Speech could not synthesize the request. Check that the voice is available for this model and that the style is supported by the voice."
                     : response.statusCode == 400 ? "Azure Speech request failed with status 400. Check the voice name, style, and output format."
                     : "Azure Speech request failed with status \(response.statusCode).")
-            var error = AIAPICallError(provider: providerID, url: url.absoluteString, requestBody: .string(ssml), statusCode: response.statusCode,
+            var error = AIAPICallError(provider: providerID, url: url.absoluteString, requestBody: .string(ssml), statusCode: voiceReset ? 400 : response.statusCode,
                                       responseHeaders: response.headers, responseBody: response.bodyText, isRetryable: voiceReset ? false : nil)
             error.message = message
             throw AIError.apiCall(error)

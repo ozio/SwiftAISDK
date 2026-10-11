@@ -1,6 +1,11 @@
 import Foundation
 
 func fireworksChatBody(from input: [String: JSONValue]) -> [String: JSONValue] {
+    var warnings: [AIWarning] = []
+    return fireworksChatBody(from: input, warnings: &warnings)
+}
+
+func fireworksChatBody(from input: [String: JSONValue], warnings: inout [AIWarning]) -> [String: JSONValue] {
     var body = input
 
     if let value = body.removeValue(forKey: "reasoningEffort") {
@@ -8,7 +13,11 @@ func fireworksChatBody(from input: [String: JSONValue]) -> [String: JSONValue] {
     }
 
     if let effort = body["reasoning_effort"]?.stringValue {
-        body["reasoning_effort"] = .string(fireworksReasoningEffort(effort))
+        let mapped = fireworksReasoningEffort(effort)
+        body["reasoning_effort"] = .string(mapped)
+        if effort != mapped {
+            warnings.append(AIWarning(type: "compatibility", feature: "reasoning", message: "reasoning \"\(effort)\" is not directly supported by this model. mapped to effort \"\(mapped)\"."))
+        }
     }
 
     if let thinking = body.removeValue(forKey: "thinking")?.objectValue {
@@ -33,7 +42,7 @@ func fireworksReasoningEffort(_ value: String) -> String {
     switch value {
     case "minimal":
         return "low"
-    case "xhigh":
+    case "xhigh", "max":
         return "high"
     default:
         return value

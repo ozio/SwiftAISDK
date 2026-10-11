@@ -142,6 +142,7 @@ public final class ElevenLabsTranscriptionModel: TranscriptionModel, @unchecked 
             segments: segments,
             language: raw["language_code"]?.stringValue,
             durationInSeconds: elevenLabsTranscriptionDuration(from: raw),
+            providerMetadata: raw["words"]?.arrayValue.map { ["elevenlabs": .object(["words": .array($0)])] } ?? [:],
             responseMetadata: aiResponseMetadata(from: raw, response: response, modelID: modelID)
         )
     }

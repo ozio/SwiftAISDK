@@ -182,3 +182,17 @@ let started = try await AI.startTextBatch(
 This compatibility surface remains text only. New integrations should prefer
 `experimentalBatch()` plus `AI.startBatch(provider:requests:)` so model identity
 and modality live on each request and the provider owns the full lifecycle.
+
+## Bounded result downloads
+
+Anthropic, OpenAI Responses, Google and Gateway batch JSONL readers enforce a
+UTF-8 byte limit per line before accumulating a large result. The default is
+64 MiB; set a positive `ProviderSettings.batchResultDownloads` limit to choose
+a smaller or larger bound. Invalid limits fail before the download starts, and
+termination or oversize lines cancel the response body.
+
+```swift
+var settings = ProviderSettings()
+settings.batchResultDownloads = AIBatchResultDownloadSettings(maxLineBytes: 8 * 1024 * 1024)
+let provider = try AIProviders.openAI(settings: settings)
+```

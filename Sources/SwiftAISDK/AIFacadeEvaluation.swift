@@ -1,6 +1,6 @@
 import Foundation
 
-private let aiEvaluationUserAgent = "ai/7.0.127"
+private let aiEvaluationUserAgent = "ai/7.0.137"
 
 extension AI {
     /// Source-compatible direct-model entry point retained from SwiftAISDK 1.9.0.
@@ -331,5 +331,110 @@ extension AI {
             ))
             throw error
         }
+    }
+}
+
+
+extension AI {
+    /// Ordered evidence overload for the retained Evaluation API. Lifecycle telemetry
+    /// follows the renamed `ai.decide` operation; callback signatures remain native Evaluation.
+    public static func experimentalEvaluate(
+        model: any AIEvaluationModelV4,
+        stateParts: [AIDecisionStatePart],
+        questions: [String: AIEvaluationQuestion],
+        maxRetries: Int? = nil,
+        abortSignal: AIAbortSignal? = nil,
+        headers: [String: String] = [:],
+        providerOptions: [String: JSONValue] = [:],
+        telemetry: Telemetry.Options? = nil,
+        runtimeContext: [String: JSONValue] = [:],
+        onStart: AICallback<AIEvaluationStartEvent>? = nil,
+        onEnd: AICallback<AIEvaluationEndEvent>? = nil
+    ) async throws -> AIEvaluationResult {
+        try await experimentalEvaluate(model: .model(model), stateParts: stateParts, questions: questions, maxRetries: maxRetries, abortSignal: abortSignal, headers: headers, providerOptions: providerOptions, telemetry: telemetry, runtimeContext: runtimeContext, onStart: onStart, onEnd: onEnd)
+    }
+
+    public static func experimentalEvaluate(
+        model: String,
+        stateParts: [AIDecisionStatePart],
+        questions: [String: AIEvaluationQuestion],
+        maxRetries: Int? = nil,
+        abortSignal: AIAbortSignal? = nil,
+        headers: [String: String] = [:],
+        providerOptions: [String: JSONValue] = [:],
+        telemetry: Telemetry.Options? = nil,
+        runtimeContext: [String: JSONValue] = [:],
+        onStart: AICallback<AIEvaluationStartEvent>? = nil,
+        onEnd: AICallback<AIEvaluationEndEvent>? = nil
+    ) async throws -> AIEvaluationResult {
+        try await experimentalEvaluate(model: .modelID(model), stateParts: stateParts, questions: questions, maxRetries: maxRetries, abortSignal: abortSignal, headers: headers, providerOptions: providerOptions, telemetry: telemetry, runtimeContext: runtimeContext, onStart: onStart, onEnd: onEnd)
+    }
+
+    public static func experimentalEvaluate(
+        model reference: AIEvaluationModelReference,
+        stateParts: [AIDecisionStatePart],
+        questions: [String: AIEvaluationQuestion],
+        maxRetries: Int? = nil,
+        abortSignal: AIAbortSignal? = nil,
+        headers: [String: String] = [:],
+        providerOptions: [String: JSONValue] = [:],
+        telemetry: Telemetry.Options? = nil,
+        runtimeContext: [String: JSONValue] = [:],
+        onStart: AICallback<AIEvaluationStartEvent>? = nil,
+        onEnd: AICallback<AIEvaluationEndEvent>? = nil
+    ) async throws -> AIEvaluationResult {
+        let model = try resolveEvaluationModel(reference)
+        let callbackState = JSONValue.array(stateParts.map(decisionStatePartJSON))
+        let result = try await experimentalDecide(
+            model: EvaluationDecisionBridge(model: model),
+            state: .parts(stateParts),
+            questions: questions,
+            maxRetries: maxRetries,
+            abortSignal: abortSignal,
+            headers: headers,
+            providerOptions: providerOptions,
+            telemetry: telemetry,
+            runtimeContext: runtimeContext,
+            onStart: { event in
+                await notify(event: AIEvaluationStartEvent(runtimeContext: event.runtimeContext, callID: event.callID, operationID: event.operationID, providerID: event.providerID, modelID: event.modelID, state: callbackState, questions: event.questions, maxRetries: event.maxRetries, headers: event.headers, providerOptions: event.providerOptions), callback: onStart)
+            },
+            onEnd: { event in
+                let answers = try evaluationAnswers(from: event.answers, providerID: event.providerID, modelID: event.modelID)
+                await notify(event: AIEvaluationEndEvent(runtimeContext: event.runtimeContext, callID: event.callID, operationID: event.operationID, providerID: event.providerID, modelID: event.modelID, state: callbackState, questions: event.questions, maxRetries: event.maxRetries, headers: event.headers, providerOptions: event.providerOptions, answers: answers, usage: event.usage, warnings: event.warnings, rounding: event.rounding, providerMetadata: event.providerMetadata, response: event.response), callback: onEnd)
+            }
+        )
+        return AIEvaluationResult(
+            answers: try evaluationAnswers(from: result.answers, providerID: model.providerID, modelID: model.modelID),
+            usage: result.usage,
+            warnings: result.warnings,
+            rounding: result.rounding,
+            providerMetadata: result.providerMetadata,
+            response: result.response
+        )
+    }
+}
+
+private struct EvaluationDecisionBridge: AIDecisionModelV4 {
+    let model: any AIEvaluationModelV4
+    var providerID: String { model.providerID }
+    var modelID: String { model.modelID }
+    var supportedQuestionTypes: [AIDecisionQuestionType] { model.supportedQuestionTypes }
+
+    func doDecide(_ options: AIDecisionModelV4CallOptions) async throws -> AIDecisionModelV4Result {
+        let result = try await model.doEvaluate(AIEvaluationModelV4CallOptions(stateParts: options.state, questions: options.questions, abortSignal: options.abortSignal, headers: options.headers, providerOptions: options.providerOptions))
+        return AIDecisionModelV4Result(
+            answers: result.answers.mapValues { answer in
+                switch answer {
+                case let .choice(choice, probabilities): .choice(choice: choice, probabilities: probabilities)
+                case let .score(score, probabilities): .score(score: score, probabilities: probabilities)
+                case let .boolean(probability): .boolean(probability: probability)
+                }
+            },
+            rounding: result.rounding,
+            usage: result.usage,
+            warnings: result.warnings,
+            providerMetadata: result.providerMetadata,
+            response: result.response
+        )
     }
 }

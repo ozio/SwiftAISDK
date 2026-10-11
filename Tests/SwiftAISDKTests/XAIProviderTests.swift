@@ -39,7 +39,7 @@ import Testing
     let speechRequest = try #require(await speechTransport.requests().first)
     #expect(speechRequest.url.absoluteString == "https://api.x.ai/v1/tts")
     #expect(speechRequest.headers["authorization"] == "Bearer xai-key")
-    #expect(speechRequest.headers["user-agent"] == "ai-sdk-xai/5.0.14")
+    #expect(speechRequest.headers["user-agent"] == "ai-sdk-xai/5.0.20")
     let speechBody = try decodeJSONBody(try #require(speechRequest.body))
     #expect(speechBody["text"]?.stringValue == "Hello [pause] world")
     #expect(speechBody["voice_id"]?.stringValue == "eve")
@@ -85,7 +85,7 @@ import Testing
     let transcriptionRequest = try #require(await transcriptionTransport.requests().first)
     #expect(transcriptionRequest.url.absoluteString == "https://api.x.ai/v1/stt")
     #expect(transcriptionRequest.headers["authorization"] == "Bearer xai-key")
-    #expect(transcriptionRequest.headers["user-agent"] == "ai-sdk-xai/5.0.14")
+    #expect(transcriptionRequest.headers["user-agent"] == "ai-sdk-xai/5.0.20")
     #expect(transcriptionRequest.headers["content-type"]?.hasPrefix("multipart/form-data; boundary=SwiftAISDK-") == true)
     let transcriptionBody = String(data: try #require(transcriptionRequest.body), encoding: .utf8) ?? ""
     #expect(transcriptionBody.contains("name=\"audio_format\""))
@@ -121,7 +121,7 @@ import Testing
         _ = try await provider.speech().speak(SpeechRequest(text: "Hi", providerOptions: ["xai": ["replace": ["xAI": true]]]))
     }
 
-    await #expect(throws: AIError.invalidArgument(argument: "providerOptions.xai.audioFormat", message: "xAI audioFormat must be pcm, mulaw, or alaw.")) {
+    await #expect(throws: AIError.invalidArgument(argument: "providerOptions.xai.audioFormat", message: "xAI audioFormat must be pcm, mulaw, alaw, or opus.")) {
         _ = try await provider.transcription().transcribe(AudioTranscriptionRequest(audio: Data("wav".utf8), providerOptions: ["xai": ["audioFormat": "mp3"]]))
     }
 
@@ -248,7 +248,7 @@ import Testing
     let imageRequest = try #require(imageRequests.first)
     #expect(imageRequest.url.absoluteString == "https://api.x.ai/v1/images/generations")
     #expect(imageRequest.headers["authorization"] == "Bearer xai-key")
-    #expect(imageRequest.headers["user-agent"] == "ai-sdk-xai/5.0.14")
+    #expect(imageRequest.headers["user-agent"] == "ai-sdk-xai/5.0.20")
     let imageBody = try decodeJSONBody(try #require(imageRequest.body))
     #expect(imageBody["model"]?.stringValue == "grok-2-image")
     #expect(imageBody["prompt"]?.stringValue == "cat")
@@ -280,7 +280,7 @@ import Testing
     #expect(requests.count == 2)
     #expect(requests[0].url.absoluteString == "https://api.x.ai/v1/videos/generations")
     #expect(requests[0].headers["authorization"] == "Bearer xai-key")
-    #expect(requests[0].headers["user-agent"] == "ai-sdk-xai/5.0.14")
+    #expect(requests[0].headers["user-agent"] == "ai-sdk-xai/5.0.20")
     let videoBody = try decodeJSONBody(try #require(requests[0].body))
     #expect(videoBody["model"]?.stringValue == "grok-2-video")
     #expect(videoBody["prompt"]?.stringValue == "cat running")
@@ -290,7 +290,7 @@ import Testing
     #expect(requests[1].method == "GET")
     #expect(requests[1].url.absoluteString == "https://api.x.ai/v1/videos/vid-1")
     #expect(requests[1].headers["authorization"] == "Bearer xai-key")
-    #expect(requests[1].headers["user-agent"] == "ai-sdk-xai/5.0.14")
+    #expect(requests[1].headers["user-agent"] == "ai-sdk-xai/5.0.20")
 
     let editTransport = RecordingTransport(responses: [
         jsonResponse(#"{"request_id":"edit-1"}"#),
@@ -312,9 +312,9 @@ import Testing
     let editRequests = await editTransport.requests()
     #expect(editRequests[0].url.absoluteString == "https://api.x.ai/v1/videos/edits")
     #expect(editRequests[0].headers["authorization"] == "Bearer xai-key")
-    #expect(editRequests[0].headers["user-agent"] == "ai-sdk-xai/5.0.14")
+    #expect(editRequests[0].headers["user-agent"] == "ai-sdk-xai/5.0.20")
     #expect(editRequests[1].headers["authorization"] == "Bearer xai-key")
-    #expect(editRequests[1].headers["user-agent"] == "ai-sdk-xai/5.0.14")
+    #expect(editRequests[1].headers["user-agent"] == "ai-sdk-xai/5.0.20")
     let editBody = try decodeJSONBody(try #require(editRequests[0].body))
     #expect(editBody["video"]?["url"]?.stringValue == "https://x.ai/source.mp4")
     #expect(editBody["aspect_ratio"] == nil)
@@ -773,10 +773,10 @@ import Testing
     await #expect(throws: AIError.invalidArgument(argument: "providerOptions.xai.sync_mode", message: "xAI sync_mode must be a boolean.")) {
         _ = try await model.generateImage(ImageGenerationRequest(prompt: "cat", providerOptions: ["xai": ["sync_mode": "true"]]))
     }
-    await #expect(throws: AIError.invalidArgument(argument: "providerOptions.xai.resolution", message: "xAI resolution must be 1k or 2k.")) {
+    await #expect(throws: AIError.invalidArgument(argument: "providerOptions.xai.resolution", message: "xAI resolution must be 1k, 1.5k, or 2k.")) {
         _ = try await model.generateImage(ImageGenerationRequest(prompt: "cat", providerOptions: ["xai": ["resolution": "4k"]]))
     }
-    await #expect(throws: AIError.invalidArgument(argument: "providerOptions.xai.quality", message: "xAI quality must be low, medium, or high.")) {
+    await #expect(throws: AIError.invalidArgument(argument: "providerOptions.xai.quality", message: "xAI quality must be low, medium, high, or auto.")) {
         _ = try await model.generateImage(ImageGenerationRequest(prompt: "cat", providerOptions: ["xai": ["quality": "ultra"]]))
     }
     await #expect(throws: AIError.invalidArgument(argument: "providerOptions.xai.user", message: "xAI user must be a string.")) {

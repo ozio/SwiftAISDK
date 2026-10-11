@@ -18,6 +18,7 @@ struct AnthropicModelCapabilities {
     var supportsXhighEffort: Bool
     var rejectsThinkingDisabledAboveHighEffort: Bool
     var rejectsThinkingDisabled: Bool
+    var rejectsBudgetThinking: Bool
     var rejectsForcedToolUse: Bool
     var supportsBetweenToolsThinking: Bool
     var isKnownModel: Bool
@@ -348,6 +349,7 @@ func anthropicModelCapabilities(_ modelID: String) -> AnthropicModelCapabilities
         supportsXhighEffort: Bool,
         rejectsThinkingDisabledAboveHighEffort: Bool = false,
         rejectsThinkingDisabled: Bool = false,
+        rejectsBudgetThinking: Bool = false,
         rejectsForcedToolUse: Bool = false,
         isKnownModel: Bool
     ) -> AnthropicModelCapabilities {
@@ -359,6 +361,7 @@ func anthropicModelCapabilities(_ modelID: String) -> AnthropicModelCapabilities
             supportsXhighEffort: supportsXhighEffort,
             rejectsThinkingDisabledAboveHighEffort: rejectsThinkingDisabledAboveHighEffort,
             rejectsThinkingDisabled: rejectsThinkingDisabled,
+            rejectsBudgetThinking: rejectsBudgetThinking,
             rejectsForcedToolUse: rejectsForcedToolUse,
             supportsBetweenToolsThinking: modelID.contains("claude-sonnet-5-5"),
             isKnownModel: isKnownModel
@@ -366,16 +369,19 @@ func anthropicModelCapabilities(_ modelID: String) -> AnthropicModelCapabilities
     }
 
     if modelID.contains("claude-opus-5-5") || modelID.contains("claude-sonnet-5-5") {
-        return capabilities(maxOutputTokens: 128_000, supportsStructuredOutput: true, supportsAdaptiveThinking: true, rejectsSamplingParameters: true, supportsXhighEffort: true, rejectsThinkingDisabledAboveHighEffort: true, rejectsThinkingDisabled: true, rejectsForcedToolUse: true, isKnownModel: true)
+        return capabilities(maxOutputTokens: 128_000, supportsStructuredOutput: true, supportsAdaptiveThinking: true, rejectsSamplingParameters: true, supportsXhighEffort: true, rejectsThinkingDisabledAboveHighEffort: true, rejectsThinkingDisabled: true, rejectsBudgetThinking: true, rejectsForcedToolUse: true, isKnownModel: true)
+    }
+    if modelID.contains("claude-haiku-5-5") {
+        return capabilities(maxOutputTokens: 128_000, supportsStructuredOutput: true, supportsAdaptiveThinking: true, rejectsSamplingParameters: true, supportsXhighEffort: true, rejectsThinkingDisabledAboveHighEffort: true, rejectsBudgetThinking: true, isKnownModel: true)
     }
     if modelID.contains("claude-opus-5") {
         return capabilities(maxOutputTokens: 128_000, supportsStructuredOutput: true, supportsAdaptiveThinking: true, rejectsSamplingParameters: true, supportsXhighEffort: true, rejectsThinkingDisabledAboveHighEffort: true, isKnownModel: true)
     }
     if modelID.contains("claude-fable-5-1") {
-        return capabilities(maxOutputTokens: 128_000, supportsStructuredOutput: true, supportsAdaptiveThinking: true, rejectsSamplingParameters: true, supportsXhighEffort: true, rejectsThinkingDisabled: true, rejectsForcedToolUse: true, isKnownModel: true)
+        return capabilities(maxOutputTokens: 128_000, supportsStructuredOutput: true, supportsAdaptiveThinking: true, rejectsSamplingParameters: true, supportsXhighEffort: true, rejectsThinkingDisabled: true, rejectsBudgetThinking: true, rejectsForcedToolUse: true, isKnownModel: true)
     }
     if modelID.contains("claude-fable-5") {
-        return capabilities(maxOutputTokens: 128_000, supportsStructuredOutput: true, supportsAdaptiveThinking: true, rejectsSamplingParameters: true, supportsXhighEffort: true, rejectsThinkingDisabled: true, isKnownModel: true)
+        return capabilities(maxOutputTokens: 128_000, supportsStructuredOutput: true, supportsAdaptiveThinking: true, rejectsSamplingParameters: true, supportsXhighEffort: true, rejectsThinkingDisabled: true, rejectsBudgetThinking: true, isKnownModel: true)
     }
     if modelID.contains("claude-opus-4-8") || modelID.contains("claude-opus-4-7") || modelID.contains("claude-sonnet-5") {
         return capabilities(maxOutputTokens: 128_000, supportsStructuredOutput: true, supportsAdaptiveThinking: true, rejectsSamplingParameters: true, supportsXhighEffort: true, isKnownModel: true)
@@ -520,7 +526,8 @@ func anthropicReasoningConfig(
             "low": "low",
             "medium": "medium",
             "high": "high",
-            "xhigh": capabilities.supportsXhighEffort ? "xhigh" : "max"
+            "xhigh": capabilities.supportsXhighEffort ? "xhigh" : "max",
+            "max": "max"
         ]
         guard let effort = effortMap[reasoning] else {
             warnings.append(AIWarning(
@@ -591,24 +598,26 @@ func anthropicNormalizeThinkingForCapabilities(
     capabilities: AnthropicModelCapabilities,
     warnings: inout [AIWarning]
 ) {
-    guard capabilities.rejectsThinkingDisabled,
-          let thinkingType = body["thinking"]?["type"]?.stringValue else { return }
-    if thinkingType == "disabled", capabilities.supportsBetweenToolsThinking {
+    guard let thinkingType = body["thinking"]?["type"]?.stringValue else { return }
+    if capabilities.rejectsThinkingDisabled, thinkingType == "disabled", capabilities.supportsBetweenToolsThinking {
         body["thinking"] = ["type": "between_tools"]
         warnings.append(AIWarning(type: "unsupported", feature: "providerOptions.anthropic.thinking", message: "thinking cannot be disabled for \(modelID). Using 'between_tools' thinking, the lowest thinking setting, instead."))
-    } else if thinkingType == "disabled" {
+    } else if capabilities.rejectsThinkingDisabled, thinkingType == "disabled" {
         body.removeValue(forKey: "thinking")
         warnings.append(AIWarning(
             type: "unsupported",
             feature: "providerOptions.anthropic.thinking",
             message: "thinking cannot be disabled for \(modelID); it always uses adaptive thinking. The thinking setting has been removed. Lower 'effort' to reduce thinking."
         ))
-    } else if thinkingType == "enabled" {
+    }
+    if capabilities.rejectsBudgetThinking, thinkingType == "enabled" {
         body["thinking"] = .object(["type": .string("adaptive")])
         warnings.append(AIWarning(
             type: "unsupported",
             feature: "providerOptions.anthropic.thinking",
-            message: "budget-based thinking is not supported by \(modelID); it always uses adaptive thinking. Using adaptive thinking instead. Use 'effort' to control how much the model thinks."
+            message: capabilities.rejectsThinkingDisabled
+                ? "budget-based thinking is not supported by \(modelID); it always uses adaptive thinking. Using adaptive thinking instead. Use 'effort' to control how much the model thinks."
+                : "budget-based thinking is not supported by \(modelID). Using adaptive thinking instead. Use 'effort' to control how much the model thinks."
         ))
     }
 }

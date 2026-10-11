@@ -143,7 +143,7 @@ func deepSeekReasoningEffort(_ value: String) -> String {
     switch value {
     case "minimal":
         return "low"
-    case "xhigh":
+    case "xhigh", "max":
         return "max"
     default:
         return value
@@ -181,7 +181,7 @@ func deepSeekReasoningEffort(from reasoning: String) -> String? {
         return "medium"
     case "high":
         return "high"
-    case "xhigh":
+    case "xhigh", "max":
         return "max"
     default:
         return nil

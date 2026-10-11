@@ -1,6 +1,6 @@
 # Porting Status
 
-Snapshot date: 2026-10-04
+Snapshot date: 2026-10-11
 
 SwiftAISDK currently ports the provider-facing parts of Vercel AI SDK into a
 SwiftPM library. The package has a broad Swift-native facade, provider registry,
@@ -22,7 +22,9 @@ for exact evidence.
   middleware, telemetry, warnings, setup and in-band stream retries, aborts,
   tools, approvals, MCP tools, UI messages, chat sessions, agent helpers, and
   provider-neutral realtime sessions.
-- Experimental Evaluation V4 is available through `AI.experimentalEvaluate`
+- Experimental Decision V4 is available through `AI.experimentalDecide` with
+  ordered text/JSON/file evidence, typed questions/answers/refusals, provider and
+  registry routing, and native telemetry. Existing Evaluation V4 is available through `AI.experimentalEvaluate`
   with Choice, Score, and Boolean questions, provider/default-registry model
   resolution, a native TypeSafe AI provider, and OpenAI, Anthropic, Google, and
   Gateway adapters.
@@ -55,20 +57,19 @@ for exact evidence.
 | Upstream test inventory | `Docs/UpstreamTestInventory.md` |
 | Latest upstream test diff audit | `Docs/FreshUpstreamTestDiffAudit.md` |
 
-Provider and core package versions were checked against npm registry metadata
-on 2026-10-04. The packages changed by this weekly pass were reviewed from
-their exact published tarballs; per-package decisions are recorded in
-`Docs/UpstreamPackageDiffAudit.md`. The current upstream inventory contains 976 executable test/spec paths in 82 groups. The fresh diff audit accounts for 210 changed executable paths and nine declaration-test paths, with a per-path disposition.
+Provider and core package versions were checked against fresh npm metadata on 2026-10-11. All **53 tracked packages** were reviewed (51 version drifts, two current); 140 old/latest/untracked published archives passed SHA-512 integrity checks. Package-by-package versions, decisions, focused tests and new-provider scope are in `Docs/UpstreamPackageDiffAudit.md`.
+
+The inventory has **1,024 executable test/spec files in 84 groups**. `Docs/FreshUpstreamTestDiffAudit.md` accounts for 190 changed executable paths and 18 declaration-test paths against the prior snapshot; published tarballs control behavior where the monorepo is ahead.
 
 ## Provider State
 
-The 2026-10-04 pass audits all 52 tracked packages (50 changed, two current), implements image capability discovery, native audio usage/telemetry, configurable tool search, safe stream correlation/smoothing and current Azure/Anthropic/Bedrock/OpenAI/Gateway behavior. Full package decisions and exact old/latest versions are in `UpstreamPackageDiffAudit.md`.
+The 2026-10-11 pass adds native Decision V4 and MCP Events, Azure MAI Image, Mistral Conversations and xAI streaming transcription. JSON-with-tools, Haiku 5.5/GPT-6 family reasoning, shared embedding dimensions, bounded batch downloads, cached/transcription metadata and native UI lifecycle/history are synchronized with the reviewed package releases. New overloads retain existing callable signatures. Experimental Evaluation endpoint/schema emulators need the documented Decision envelopes; normal source-level callers remain compatible.
 
-Fresh search plus exact prefix enumeration finds 88 scoped packages. A separately authorized follow-up now ports **Topaz 3.0.0** for Wonder 3.5 image enhancement and Proteus/Starlight video enhancement, bringing the inventory to 53 tracked packages. No known published model provider remains unported. The empty SpaceXAI reservation and framework/harness packages remain outside provider coverage. See the Topaz follow-up in `UpstreamPackageDiffAudit.md` for source, fixture and verification evidence.
+Fresh search plus exact registry-prefix enumeration finds **90 scoped names**. **HeyGen 3.0.0** is a new published async video provider and remains deliberately unimplemented: port its text/image/reference start/status lifecycle, options/inputs, downloads/auth, errors/usage, focused fixtures, factory and docs as the next dedicated provider vertical. `@ai-sdk/tools@0.0.0` is a seed package; SpaceXAI remains an empty reservation. Framework, harness, sandbox and JavaScript workflow packages remain outside native provider-model coverage.
 
-The Topaz follow-up passed 38 focused tests, all 3,042 tests in 23 suites in both parallel and serial modes, the example build, an iOS 15 Simulator cross-build, docs checks with zero diagnostics, and a 94-page docs build. All 53 tracked packages are current. Its new provider surface warrants a minor release from 2.1.1.
+Final local verification passed **3,223 tests in 36 suites**, all existing `Examples` targets, five public Swift snippets with zero diagnostics, docs dependency installation, zero Astro errors/warnings/hints across four files, and a **96-page** site build. Fresh registry readback confirms 53 current baselines and zero drift/errors. The release is an additive **minor 2.3.0** from **2.2.0**; exhaustive `ModelCapability` switches should handle `.decision`. Paid provider smoke calls remain opt-in and were not enabled.
 
-The preceding 2.1.0 weekly release added public APIs and the MAI audio family while retaining existing call, initializer and iterator signatures. It passed 54 focused regressions, 3,008 tests in 22 suites, the Examples build and a 93-page docs build. The 2.1.1 maintenance release repaired a hosted-only polling fixture failure (153 ms against a 150 ms wall-clock bound) by checking cancellation and unfinished status directly, without changing library behavior. Both published tags are preserved. Remaining shared/native gaps are listed in the package audit and Active Product Gaps below.
+The previous published `2.2.0` added Topaz image/video enhancement and passed 3,042 tests in 23 suites, zero docs diagnostics and a 94-page docs build. Topaz remains implemented. The prior `2.1.1` polling-fixture repair is preserved; this pass does not alter the old release tags or include inherited commits or unrelated work.
 
 ### Earlier weekly passes
 
@@ -356,14 +357,17 @@ one of these is true:
 
 | Priority | Gap | Next action |
 | --- | --- | --- |
+| P1 | HeyGen 3.0.0 async video is announced but unported. | Implement one dedicated native provider vertical with persisted operation state, inputs/options, safe downloads, fixtures and docs. |
 | P1 | Google/Vertex Gemini transcription and Open Responses extension codecs remain absent native adapters. | Design and port each complete request/stream/replay surface before advertising parity. |
 | P0 | Completion evidence can drift as npm packages and upstream tests change. | Before release, rerun package discovery, regenerate upstream inventory, compare ledgers, run full `swift test`, and record the audit. |
 | P0 | Live verification is representative, not exhaustive. | Add opt-in live smoke only for distinct transport families or concrete production risks. Keep it disabled by default. |
 | P1 | `URLSessionTransport` currently adapts `URLSession.AsyncBytes` into one `Data` value per byte. This preserves minimum latency and correct cancellation, but adds allocation overhead and offers no demand-aware backpressure. | Introduce a cancelable, demand-driven `AIHTTPBody` sequence backed by a delegate-owned `URLSession`, with bounded lossless buffering and explicit high/low watermarks. Keep the injected-session compatibility path until delegate, authentication, cache, metrics, and lifecycle semantics can be preserved. |
 | P1 | xAI realtime and OpenAI Live server WebSocket are represented, but browser WebRTC/client permissions, provider-backed Responses delegation, non-Live OpenAI Realtime, Google Realtime 3.8, ElevenLabs realtime STT, and streaming translation remain deferred. | Extend `AIRealtimeModelV4` one complete transport/provider vertical at a time; do not advertise browser or delegation modes until their native lifecycle is implemented and tested. |
-| P1 | Batch V4 has Anthropic, OpenAI Responses, Gateway, Google, and xAI adapters. Async Video V4 has Black Forest Labs, Fal, ByteDance, and Gateway adapters, but other capable providers still use unary or internal-polling paths. | Migrate additional batch/video providers incrementally when persisted operation state, native webhook behavior, and provider-specific cancellation semantics can be translated with focused tests. |
-| P1 | `@ai-sdk/provider-utils@5.0.53` retains resolver-backed DNS address pinning for validated downloads; Swift validates literal/private hosts and every redirect and removes provider credentials across origins, but does not pin the resolved address. | Add resolver-aware connection pinning at the transport layer before claiming DNS-rebinding parity. |
+| P1 | Batch V4 has Anthropic, OpenAI Responses, Gateway, Google, and xAI adapters. Async Video V4 has Black Forest Labs, Fal, ByteDance, Gateway and Topaz adapters, but other capable providers still use unary or internal-polling paths. | Migrate additional batch/video providers incrementally when persisted operation state, native webhook behavior, and provider-specific cancellation semantics can be translated with focused tests. |
+| P1 | `@ai-sdk/provider-utils@5.0.58` retains resolver-backed DNS address pinning for validated downloads; Swift validates literal/private hosts and every redirect and removes provider credentials across origins, but does not pin the resolved address. | Add resolver-aware connection pinning at the transport layer before claiming DNS-rebinding parity. |
+| P1 | Browser HTTP/WebSocket chat framing, Node stream-response helpers, tracing-channel/workflow codecs and legacy EventSource SSE are not native adapters. | Add a complete native public adapter only after lifecycle, replay, auth and serialization behavior are designed and tested. |
 | P1 | Upstream preserves repeated tool-call IDs across explicit UI stream steps; Swift stream parts do not expose step boundaries. | Add a public step-boundary representation, then scope reducer tool-part identity to the active step with backwards lookup for late results. |
+| P1 | The nonoptional Swift stopSequences array cannot distinguish omitted from explicitly empty input for Bedrock warning parity. | Introduce an additive presence-aware request representation before changing this warning behavior. |
 | P1 | Provider option ergonomics are harder to discover than the core facade. | Add compact provider option examples to docs-site for non-obvious schemas and Swift differences. |
 | P1 | Tooling is broad but can be more polished. | Improve validation diagnostics, typed result/error surfaces, and provider-defined tool helper docs. |
 | P1 | Structured output works, but schema ecosystem parity is intentionally Swift-native. `Output.array` construction remains nonthrowing for source compatibility; invalid bounds are rejected at execution before model work begins. | Keep improving schema adapter ergonomics, repair telemetry, provider-specific structured-output examples, and docs. |

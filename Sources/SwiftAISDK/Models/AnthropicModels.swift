@@ -516,6 +516,14 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
                                 rawUsage = usage
                                 finishUsage = anthropicTokenUsage(from: usage)
                             }
+                            continuation.yield(.custom(
+                                ["kind": "anthropic.message_start"],
+                                providerMetadata: ["anthropic": .object([
+                                    "id": raw["message"]?["id"] ?? .null,
+                                    "model": raw["message"]?["model"] ?? .null,
+                                    "usage": rawUsage ?? .null
+                                ])]
+                            ))
                             if let value = anthropicContainerMetadata(from: raw["message"]?["container"]) {
                                 container = value
                             }
@@ -1267,6 +1275,9 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
                 guard let metadata, let marker = anthropicFallbackMetadata(metadata) else {
                     warnings.append(AIWarning(type: "other", message: "anthropic fallback metadata must include from.model and to.model"))
                     return nil
+                }
+                if !betas.contains("server-side-fallback-2026-06-01") {
+                    betas.append("server-side-fallback-2026-06-01")
                 }
                 return marker
             case .reasoningFile, .toolApprovalRequest, .toolApprovalResponse:
@@ -2191,6 +2202,14 @@ public final class AmazonBedrockAnthropicLanguageModel: LanguageModel, @unchecke
                                     rawUsage = usage
                                     finishUsage = anthropicTokenUsage(from: usage)
                                 }
+                                continuation.yield(.custom(
+                                    ["kind": "anthropic.message_start"],
+                                    providerMetadata: ["anthropic": .object([
+                                        "id": raw["message"]?["id"] ?? .null,
+                                        "model": raw["message"]?["model"] ?? .null,
+                                        "usage": rawUsage ?? .null
+                                    ])]
+                                ))
                                 if let value = anthropicContainerMetadata(from: raw["message"]?["container"]) {
                                     container = value
                                 }

@@ -36,6 +36,8 @@ public actor MCPClient {
     private let maxRetries: Int
     private let protocolVersionDiscovery: Bool
     private let onUncaughtError: (@Sendable (any Error) -> Void)?
+    private let eventsConfiguration: MCPEventsConfiguration
+    private let eventOperations: (any MCPEventOperations)?
     private var requestID = 0
     private var isClosed = true
     private var elicitationRequestHandler: MCPElicitationHandler?
@@ -52,8 +54,16 @@ public actor MCPClient {
         initializationOptions: MCPRequestOptions?,
         maxRetries: Int,
         protocolVersionDiscovery: Bool,
-        onUncaughtError: (@Sendable (any Error) -> Void)?
-    ) {
+        onUncaughtError: (@Sendable (any Error) -> Void)?,
+        events: MCPEventsConfiguration = .direct()
+    ) throws {
+        self.eventsConfiguration = events
+        if case let .managed(adapter) = events {
+            let metadata: MCPEventTransportMetadata = (transport as? MCPHTTPTransport).map { .http(url: $0.eventEndpoint) } ?? .custom
+            self.eventOperations = try adapter.createAdapter(transport: metadata)
+        } else {
+            self.eventOperations = nil
+        }
         self.transport = transport
         self.clientInfo = MCPImplementation(name: clientName, version: clientVersion)
         self.clientCapabilities = clientCapabilities
@@ -78,7 +88,7 @@ public actor MCPClient {
         guard maxRetries >= 0 else {
             throw MCPClientError(message: "maxRetries must be >= 0")
         }
-        let client = MCPClient(
+        let client = try MCPClient(
             transport: transport,
             clientName: clientName,
             clientVersion: clientVersion,
@@ -91,6 +101,32 @@ public actor MCPClient {
         )
         try await client.initialize()
         return client
+    }
+
+    public static func connect(
+        transport: any MCPTransport,
+        events: MCPEventsConfiguration,
+        clientName: String = "swift-ai-sdk-mcp-client",
+        clientVersion: String = "1.0.0",
+        clientCapabilities: JSONValue = .object([:]),
+        initialInitializeResult: JSONValue? = nil,
+        initializationOptions: MCPRequestOptions? = nil,
+        maxRetries: Int = 0,
+        protocolVersionDiscovery: Bool = true,
+        onUncaughtError: (@Sendable (any Error) -> Void)? = nil
+    ) async throws -> MCPClient {
+        guard maxRetries >= 0 else { throw MCPClientError(message: "maxRetries must be >= 0") }
+        let client = try MCPClient(transport: transport, clientName: clientName, clientVersion: clientVersion, clientCapabilities: clientCapabilities, initialInitializeResult: initialInitializeResult, initializationOptions: initializationOptions, maxRetries: maxRetries, protocolVersionDiscovery: protocolVersionDiscovery, onUncaughtError: onUncaughtError, events: events)
+        try await client.initialize()
+        return client
+    }
+
+    public var experimentalEvents: MCPEvents {
+        MCPEvents(client: self, configuration: eventsConfiguration, managedOperations: eventOperations)
+    }
+
+    func eventRequest(method: String, params: JSONValue?, options: MCPRequestOptions?) async throws -> JSONValue {
+        try await request(method: method, params: params, options: options)
     }
 
     public func close() async throws {
@@ -508,6 +544,7 @@ public actor MCPClient {
         if method.hasPrefix("tools/") { return "tools" }
         if method.hasPrefix("resources/") { return "resources" }
         if method.hasPrefix("prompts/") { return "prompts" }
+        if method.hasPrefix("events/") { return "events" }
         if method == "completion/complete" { return "completions" }
         return method
     }

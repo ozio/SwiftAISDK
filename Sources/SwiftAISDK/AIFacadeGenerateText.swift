@@ -427,14 +427,16 @@ extension AI {
         jsonInstruction: AIJSONInstruction? = nil,
         repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
     ) async throws -> AIOutputGenerationResult<FinalOutput> {
-        try await output.generateFromRequest(
-            model,
-            request,
-            retryPolicy,
-            telemetry,
-            jsonInstruction,
-            repairText
-        )
+        try await AIDeprecationLogging.$suppressObjectWarnings.withValue(true) {
+            try await output.generateFromRequest(
+                model,
+                request,
+                retryPolicy,
+                telemetry,
+                jsonInstruction,
+                repairText
+            )
+        }
     }
 
     public static func generateText<FinalOutput: Sendable, PartialOutput: Sendable>(

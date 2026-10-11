@@ -214,6 +214,7 @@ public final class AnthropicBatchLanguageModel: BatchLanguageModel, @unchecked S
         }
         var headers = prepareHeaders(options.headers, defaultHeaders: config.headers)
         headers["accept"] = headers["accept"] ?? "application/jsonl"
+        let maxLineBytes = try aiBatchResultLineLimit(config.batchResultMaxLineBytes)
         let transport = try requireStreamingTransport(config.transport, providerID: providerID)
         let streamed = try await streamDownloadURL(
             resultsURL,
@@ -235,7 +236,10 @@ public final class AnthropicBatchLanguageModel: BatchLanguageModel, @unchecked S
         return anthropicBatchResultStream(
             body: response.body,
             providerID: providerID,
-            abortSignal: options.abortSignal
+            abortSignal: options.abortSignal,
+            url: request.url.absoluteString,
+            maxLineBytes: maxLineBytes,
+            cancelBody: response.cancelBody
         )
     }
 
@@ -506,26 +510,18 @@ private func anthropicExplicitRequestBetas(
 private func anthropicBatchResultStream(
     body: AsyncThrowingStream<Data, Error>,
     providerID: String,
-    abortSignal: AIAbortSignal?
+    abortSignal: AIAbortSignal?,
+    url: String,
+    maxLineBytes: Int,
+    cancelBody: @escaping @Sendable () -> Void
 ) -> AsyncThrowingStream<AIBatchItemResult<TextGenerationResult>, Error> {
     AsyncThrowingStream { continuation in
         let task = Task {
             do {
-                var buffer = Data()
-                for try await chunk in body {
-                    try Task.checkCancellation()
-                    try abortSignal?.throwIfAborted()
-                    buffer.append(chunk)
-                    while let newline = buffer.firstIndex(of: 0x0A) {
-                        let line = Data(buffer[..<newline])
-                        buffer.removeSubrange(...newline)
-                        if let item = try parseAnthropicBatchResultLine(line, providerID: providerID) {
-                            continuation.yield(item)
-                        }
+                try await aiForEachBatchResultLine(body, url: url, maxLineBytes: maxLineBytes, abortSignal: abortSignal, cancelBody: cancelBody) { line in
+                    if let item = try parseAnthropicBatchResultLine(line, providerID: providerID) {
+                        continuation.yield(item)
                     }
-                }
-                if let item = try parseAnthropicBatchResultLine(buffer, providerID: providerID) {
-                    continuation.yield(item)
                 }
                 continuation.finish()
             } catch {
@@ -534,6 +530,59 @@ private func anthropicBatchResultStream(
         }
         continuation.onTermination = { @Sendable _ in task.cancel() }
     }
+}
+
+func aiBatchResultLineLimit(_ maxLineBytes: Int?) throws -> Int {
+    let limit = maxLineBytes ?? 64 * 1024 * 1024
+    guard limit > 0, limit <= 9_007_199_254_740_991 else {
+        throw AIError.invalidArgument(argument: "maxLineBytes", message: "maxLineBytes must be a positive safe integer.")
+    }
+    return limit
+}
+
+/// Counts raw UTF-8 bytes before buffering, including CR and excluding LF.
+/// The limit is per row, so a chunk containing many short rows remains valid.
+func aiForEachBatchResultLine(
+    _ body: AsyncThrowingStream<Data, Error>,
+    url: String,
+    maxLineBytes: Int,
+    abortSignal: AIAbortSignal?,
+    cancelBody: @Sendable () -> Void = {},
+    consume: (Data) throws -> Void
+) async throws {
+    defer { cancelBody() }
+    var buffer = Data()
+    var isFirstLine = true
+    func emit(_ data: Data) throws {
+        var line = data
+        if isFirstLine {
+            isFirstLine = false
+            if line.starts(with: [0xEF, 0xBB, 0xBF]) { line.removeFirst(3) }
+        }
+        if line.last == 0x0D { line.removeLast() }
+        try consume(line)
+    }
+    for try await chunk in body {
+        try Task.checkCancellation()
+        try abortSignal?.throwIfAborted()
+        var offset = chunk.startIndex
+        while offset < chunk.endIndex {
+            let newline = chunk[offset...].firstIndex(of: 0x0A)
+            let segmentEnd = newline ?? chunk.endIndex
+            let segmentCount = chunk.distance(from: offset, to: segmentEnd)
+            guard segmentCount <= maxLineBytes - buffer.count else {
+                throw AIDownloadError(url: url, message: "JSON Lines response exceeded maximum line size of \(maxLineBytes) bytes.")
+            }
+            buffer.append(contentsOf: chunk[offset..<segmentEnd])
+            guard let newline else { break }
+            try emit(buffer)
+            buffer.removeAll(keepingCapacity: true)
+            offset = chunk.index(after: newline)
+        }
+    }
+    try Task.checkCancellation()
+    try abortSignal?.throwIfAborted()
+    if !buffer.isEmpty { try emit(buffer) }
 }
 
 private func parseAnthropicBatchResultLine(

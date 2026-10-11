@@ -321,11 +321,12 @@ public final class GoogleBatchLanguageModel: BatchLanguageModel, @unchecked Send
             abortSignal: options.abortSignal,
             maxResponseBytes: googleBatchInputFileMaxBytes
         )
+        let maxLineBytes = try aiBatchResultLineLimit(config.batchResultMaxLineBytes)
         let response = try await config.streamRequest(request)
         guard (200..<300).contains(response.statusCode) else {
             throw config.httpStatusError(try await bufferedHTTPResponse(from: response, request: request))
         }
-        return googleBatchResultStream(body: response.body, abortSignal: options.abortSignal)
+        return googleBatchResultStream(body: response.body, abortSignal: options.abortSignal, url: request.url.absoluteString, maxLineBytes: maxLineBytes, cancelBody: response.cancelBody)
     }
 
     func getProviderBatchResults(
@@ -382,11 +383,12 @@ public final class GoogleBatchLanguageModel: BatchLanguageModel, @unchecked Send
             abortSignal: options.abortSignal,
             maxResponseBytes: googleBatchInputFileMaxBytes
         )
+        let maxLineBytes = try aiBatchResultLineLimit(config.batchResultMaxLineBytes)
         let response = try await config.streamRequest(request)
         guard (200..<300).contains(response.statusCode) else {
             throw config.httpStatusError(try await bufferedHTTPResponse(from: response, request: request))
         }
-        return googleProviderBatchResultStream(body: response.body, abortSignal: options.abortSignal)
+        return googleProviderBatchResultStream(body: response.body, abortSignal: options.abortSignal, url: request.url.absoluteString, maxLineBytes: maxLineBytes, cancelBody: response.cancelBody)
     }
 
     func cancelProviderBatch(_ options: AIBatchOperationOptions) async throws -> AIBatchCancelResult {
@@ -590,34 +592,18 @@ public final class GoogleBatchLanguageModel: BatchLanguageModel, @unchecked Send
 
     private func googleBatchResultStream(
         body: AsyncThrowingStream<Data, Error>,
-        abortSignal: AIAbortSignal?
+        abortSignal: AIAbortSignal?,
+        url: String,
+        maxLineBytes: Int,
+        cancelBody: @escaping @Sendable () -> Void
     ) -> AsyncThrowingStream<AIBatchItemResult<TextGenerationResult>, Error> {
         AsyncThrowingStream { continuation in
             let task = Task {
                 do {
-                    var buffer = Data()
-                    for try await chunk in body {
-                        try Task.checkCancellation()
-                        try abortSignal?.throwIfAborted()
-                        buffer.append(chunk)
-                        while let newline = buffer.firstIndex(of: 0x0a) {
-                            var line = Data(buffer[..<newline])
-                            buffer.removeSubrange(...newline)
-                            if line.last == 0x0d { line.removeLast() }
-                            if googleBatchHasNonWhitespace(line) {
-                                continuation.yield(try googleBatchItemResult(
-                                    decodeJSONBody(line),
-                                    providerID: providerID
-                                ))
-                            }
+                    try await aiForEachBatchResultLine(body, url: url, maxLineBytes: maxLineBytes, abortSignal: abortSignal, cancelBody: cancelBody) { line in
+                        if googleBatchHasNonWhitespace(line) {
+                            continuation.yield(try googleBatchItemResult(decodeJSONBody(line), providerID: providerID))
                         }
-                    }
-                    if buffer.last == 0x0d { buffer.removeLast() }
-                    if googleBatchHasNonWhitespace(buffer) {
-                        continuation.yield(try googleBatchItemResult(
-                            decodeJSONBody(buffer),
-                            providerID: providerID
-                        ))
                     }
                     continuation.finish()
                 } catch {
@@ -651,34 +637,18 @@ public final class GoogleBatchLanguageModel: BatchLanguageModel, @unchecked Send
 
     private func googleProviderBatchResultStream(
         body: AsyncThrowingStream<Data, Error>,
-        abortSignal: AIAbortSignal?
+        abortSignal: AIAbortSignal?,
+        url: String,
+        maxLineBytes: Int,
+        cancelBody: @escaping @Sendable () -> Void
     ) -> AsyncThrowingStream<AIBatchV4ItemResult, Error> {
         AsyncThrowingStream { continuation in
             let task = Task {
                 do {
-                    var buffer = Data()
-                    for try await chunk in body {
-                        try Task.checkCancellation()
-                        try abortSignal?.throwIfAborted()
-                        buffer.append(chunk)
-                        while let newline = buffer.firstIndex(of: 0x0a) {
-                            var line = Data(buffer[..<newline])
-                            buffer.removeSubrange(...newline)
-                            if line.last == 0x0d { line.removeLast() }
-                            if googleBatchHasNonWhitespace(line) {
-                                continuation.yield(try googleProviderBatchItemResult(
-                                    decodeJSONBody(line),
-                                    providerID: providerID
-                                ))
-                            }
+                    try await aiForEachBatchResultLine(body, url: url, maxLineBytes: maxLineBytes, abortSignal: abortSignal, cancelBody: cancelBody) { line in
+                        if googleBatchHasNonWhitespace(line) {
+                            continuation.yield(try googleProviderBatchItemResult(decodeJSONBody(line), providerID: providerID))
                         }
-                    }
-                    if buffer.last == 0x0d { buffer.removeLast() }
-                    if googleBatchHasNonWhitespace(buffer) {
-                        continuation.yield(try googleProviderBatchItemResult(
-                            decodeJSONBody(buffer),
-                            providerID: providerID
-                        ))
                     }
                     continuation.finish()
                 } catch {

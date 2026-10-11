@@ -97,6 +97,9 @@ public struct AIUIMessage: Equatable, Hashable, Sendable {
     public var role: MessageRole
     public var parts: [AIUIMessagePart]
     public var metadata: [String: JSONValue]
+    /// Static tool calls normalized because their current schema was unavailable
+    /// or incompatible. Persist this field alongside the message's parts.
+    public var unavailableStaticToolCallIDs: Set<String>
 
     public init(
         id: String = UUID().uuidString,
@@ -104,10 +107,21 @@ public struct AIUIMessage: Equatable, Hashable, Sendable {
         parts: [AIUIMessagePart] = [],
         metadata: [String: JSONValue] = [:]
     ) {
+        self.init(id: id, role: role, parts: parts, metadata: metadata, unavailableStaticToolCallIDs: [])
+    }
+
+    public init(
+        id: String = UUID().uuidString,
+        role: MessageRole,
+        parts: [AIUIMessagePart] = [],
+        metadata: [String: JSONValue] = [:],
+        unavailableStaticToolCallIDs: Set<String>
+    ) {
         self.id = id
         self.role = role
         self.parts = parts
         self.metadata = metadata
+        self.unavailableStaticToolCallIDs = unavailableStaticToolCallIDs
     }
 
     public static func system(
@@ -162,3 +176,21 @@ public struct AIUIMessage: Equatable, Hashable, Sendable {
         }.joined()
     }
 }
+
+/// Current schemas used to validate persisted static UI tool history.
+public struct AIUIMessageToolSchema: Equatable, Sendable {
+    public var inputSchema: JSONValue
+    public var outputSchema: JSONValue?
+
+    public init(inputSchema: JSONValue, outputSchema: JSONValue? = nil) {
+        self.inputSchema = inputSchema
+        self.outputSchema = outputSchema
+    }
+
+    public init(_ tool: AITool, outputSchema: JSONValue? = nil) {
+        self.init(inputSchema: tool.parameters, outputSchema: outputSchema)
+    }
+}
+
+/// Reconstructs approved tool arguments from the input originally validated by its schema.
+public typealias AIUIMessageToolInputRefiner = @Sendable (JSONValue) async throws -> JSONValue

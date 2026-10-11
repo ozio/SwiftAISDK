@@ -21,6 +21,7 @@ public func convertToModelMessages(
     convertDataPart: AIUIDataPartConverter?
 ) throws -> [AIMessage] {
     _ = try validateUIMessages(messages)
+    let unavailableIDs = Set(messages.flatMap { $0.unavailableStaticToolCallIDs })
     let lastUserIndex = messages.lastIndex { $0.role == .user } ?? -1
     return try messages.enumerated().flatMap { index, message in
         var filteredMessage = ignoreIncompleteToolCalls
@@ -45,16 +46,59 @@ public func convertToModelMessages(
                 return false
             }
         }
-        let modelMessage = try convertToModelMessage(filteredMessage, path: "messages[\(index)]", convertDataPart: convertDataPart)
+        let modelMessage = try convertToModelMessage(filteredMessage, path: "messages[\(index)]", convertDataPart: convertDataPart, unavailableStaticToolCallIDs: unavailableIDs)
         return splitAssistantResponseMessages(modelMessage)
     }
+}
+
+/// Uses current tool converters when restoring normalized static tool history.
+public func convertToModelMessages(
+    _ messages: [AIUIMessage],
+    tools: [String: AITool],
+    ignoreIncompleteToolCalls: Bool = false,
+    convertDataPart: AIUIDataPartConverter? = nil
+) async throws -> [AIMessage] {
+    _ = try validateUIMessages(messages)
+    var prepared = messages
+    var calls: [String: AIToolCall] = [:]
+    for message in messages {
+        for part in message.parts {
+            if case let .toolCall(call) = part { calls[call.id] = call }
+        }
+    }
+    let restoredIDs = Set(calls.values.filter { tools[$0.name] != nil }.map(\.id))
+    for messageIndex in prepared.indices {
+        prepared[messageIndex].unavailableStaticToolCallIDs.subtract(restoredIDs)
+        for partIndex in prepared[messageIndex].parts.indices {
+            guard case var .toolResult(result) = prepared[messageIndex].parts[partIndex],
+                  !result.isError,
+                  !(ignoreIncompleteToolCalls && result.preliminary),
+                  let call = calls[result.toolCallID],
+                  let tool = tools[call.name] else { continue }
+            if let converter = tool.toModelOutput {
+                let input = call.arguments.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    ? JSONValue.object([:])
+                    : try secureJSONParse(call.arguments)
+                result.modelOutput = try await converter(.init(toolCallID: call.id, input: input, output: result.result))
+            } else {
+                result.modelOutput = nil
+            }
+            prepared[messageIndex].parts[partIndex] = .toolResult(result)
+        }
+    }
+    return try convertToModelMessages(prepared, ignoreIncompleteToolCalls: ignoreIncompleteToolCalls, convertDataPart: convertDataPart)
 }
 
 public func convertToModelMessage(_ message: AIUIMessage) throws -> AIMessage {
     try convertToModelMessage(message, path: "message")
 }
 
-private func convertToModelMessage(_ message: AIUIMessage, path: String, convertDataPart: AIUIDataPartConverter? = nil) throws -> AIMessage {
+private func convertToModelMessage(
+    _ message: AIUIMessage,
+    path: String,
+    convertDataPart: AIUIDataPartConverter? = nil,
+    unavailableStaticToolCallIDs: Set<String> = []
+) throws -> AIMessage {
     var content: [AIContentPart] = []
     var providerMetadata: [String: JSONValue] = [:]
     var systemText = ""
@@ -92,7 +136,16 @@ private func convertToModelMessage(_ message: AIUIMessage, path: String, convert
             }
             content.append(.toolCall(resolvedCall))
         case let .toolResult(result):
-            content.append(.toolResult(result))
+            if !result.isError,
+               unavailableStaticToolCallIDs.contains(result.toolCallID) || message.unavailableStaticToolCallIDs.contains(result.toolCallID) {
+                var omitted = result
+                let text = "Tool output omitted because the tool is no longer available."
+                omitted.result = .string(text)
+                omitted.modelOutput = .object(["type": .string("text"), "value": .string(text)])
+                content.append(.toolResult(omitted))
+            } else {
+                content.append(.toolResult(result))
+            }
         case let .toolApprovalRequest(request):
             content.append(.toolApprovalRequest(request))
         case let .toolApprovalResponse(response):

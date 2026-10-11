@@ -1,10 +1,62 @@
 import Foundation
 
-func googleGenerateContentText(from raw: JSONValue) -> String? {
+func googleConvertJSONResponseTool(_ raw: JSONValue, name: String?) -> JSONValue {
+    guard let name, var object = raw.objectValue,
+          var candidates = object["candidates"]?.arrayValue,
+          !candidates.isEmpty, var candidate = candidates[0].objectValue,
+          var content = candidate["content"]?.objectValue,
+          let parts = content["parts"]?.arrayValue else { return raw }
+    content["parts"] = .array(parts.compactMap { part in
+        if let call = part["functionCall"], call["name"]?.stringValue == name {
+            var text: [String: JSONValue] = ["text": .string(call["args"]?.stringValue ?? googleGenerateContentArguments(call["args"]))]
+            if let signature = part["thoughtSignature"] { text["thoughtSignature"] = signature }
+            return .object(text)
+        }
+        if part["text"] != nil, part["thought"]?.boolValue != true { return nil }
+        return part
+    })
+    candidate["content"] = .object(content)
+    candidates[0] = .object(candidate)
+    object["candidates"] = .array(candidates)
+    return .object(object)
+}
+
+func googleJSONResponseToolContent(
+    from raw: JSONValue,
+    toolNameMapping: AIToolNameMapping
+) -> [AIResultContentPart] {
+    var content: [AIResultContentPart] = []
+    var calls = googleGenerateContentToolCalls(from: raw, toolNameMapping: toolNameMapping).makeIterator()
+    var results = googleGenerateContentToolResults(from: raw, toolNameMapping: toolNameMapping).makeIterator()
+    for part in raw["candidates"]?[0]?["content"]?["parts"]?.arrayValue ?? [] {
+        if let text = part["text"]?.stringValue {
+            let metadata = googleThoughtSignatureProviderMetadata(from: part)
+            content.append(part["thought"]?.boolValue == true ? .reasoning(text, providerMetadata: metadata) : .text(text, providerMetadata: metadata))
+        } else if part["functionCall"] != nil || part["executableCode"] != nil || part["toolCall"] != nil {
+            if let call = calls.next() { content.append(.toolCall(call)) }
+        } else if part["codeExecutionResult"] != nil || part["toolResponse"] != nil {
+            if let result = results.next() { content.append(.toolResult(result)) }
+        } else if let data = part["inlineData"], let mediaType = data["mimeType"]?.stringValue,
+                  let bytes = data["data"]?.stringValue {
+            let file = AIStreamFile(mediaType: mediaType, data: Data(base64Encoded: bytes), providerMetadata: googleInlineDataProviderMetadata(from: part), rawValue: part)
+            content.append(part["thought"]?.boolValue == true ? .reasoningFile(file) : .file(file))
+        }
+    }
+    content.append(contentsOf: googleGenerateContentSources(from: raw).map(AIResultContentPart.source))
+    return content
+}
+
+func googleGenerateContentText(from raw: JSONValue, includeThoughts: Bool = true) -> String? {
     let text = raw["candidates"]?[0]?["content"]?["parts"]?.arrayValue?.compactMap { part in
-        part["text"]?.stringValue
+        includeThoughts || part["thought"]?.boolValue != true ? part["text"]?.stringValue : nil
     }.joined()
     return text
+}
+
+func googleGenerateContentReasoning(from raw: JSONValue) -> String {
+    (raw["candidates"]?[0]?["content"]?["parts"]?.arrayValue ?? []).compactMap { part in
+        part["thought"]?.boolValue == true ? part["text"]?.stringValue : nil
+    }.joined()
 }
 
 func googleGenerateContentToolCalls(

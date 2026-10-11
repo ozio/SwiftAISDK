@@ -1,0 +1,107 @@
+# MCP events
+
+Source URL: /cookbook/mcp-events/
+
+`MCPClient.experimentalEvents` supports catalog discovery, direct webhook
+subscriptions, renewal and unsubscribe, or an application-managed adapter.
+Direct and managed configurations are mutually exclusive. Existing MCP tools
+and connection signatures continue to work without event configuration.
+
+## Direct subscriptions
+
+Implement `MCPEventStore` in your application's durable database. It provides
+`get(key:)`, `getById(_:)`, `set(_:)`, `update(key:patch:)`, and `delete(key:)`.
+Updates must merge fields atomically; `MCPEventSubscriptionPatch.applying(to:)`
+helps apply a patch to a locked record. Explicit `.null` clears a nullable
+cursor. Never overwrite a current subscription with an earlier snapshot.
+
+Mount the webhook handler before subscribing, because the server can verify
+the callback before its subscribe response arrives:
+
+```swift
+let handler = MCPEventWebhook(
+    store: databaseStore,
+    onEvent: { subscription, event in
+        try await persistAcceptedEvent(subscription.id, event)
+    },
+    onGap: { subscription, messageID, gap in
+        try await persistReplayGap(subscription.id, messageID, gap)
+    },
+    onTerminated: { subscription, messageID, termination in
+        try await persistTermination(subscription.id, messageID, termination)
+    }
+)
+// Adapt your HTTP server request to AIHTTPRequest, call handler.handle(...),
+// and return its AIHTTPResponse at https://app.example/events.
+
+let client = try await MCPClient.connect(
+    transport: try MCPHTTPTransport(url: "https://mcp.example/rpc"),
+    events: .direct(store: databaseStore)
+)
+let events = await client.experimentalEvents
+let catalog = try await events.list()
+let subscription = try await events.subscribe(.init(
+    name: "comment.created",
+    arguments: ["document_id": "doc_1"],
+    callbackURL: URL(string: "https://app.example/events")!,
+    lifetime: .milliseconds(3_600_000),
+    maxAgeMilliseconds: 0
+))
+_ = try await events.refresh(.id(subscription.id))
+try await events.unsubscribe(.id(subscription.id))
+```
+
+`databaseStore` and the persistence functions are application-owned. A
+successful callback means durable acceptance: only afterward does the handler
+advance the cursor, mark a gap, or delete a terminated subscription. Callback
+failure returns HTTP 503 without that state change. Deduplicate and order
+events by subscription ID plus event ID in your database. The SDK does not
+automatically run an agent for each delivery.
+
+Subscription creation persists a pending record and signing secret before
+network I/O. Failed or uncertain create/renew calls retain it for recovery.
+Renewal uses the most recently stored cursor and preserves identity and secret;
+unsubscribe deletes the record only after a successful remote response.
+Pending deliveries return 503, while authenticated verification challenges
+can succeed before activation. Known expired subscriptions reject events with
+410. Optional argument and payload validators let your application enforce
+its JSON schemas.
+
+Callbacks require HTTPS without URL credentials or fragments. For development,
+explicit `allowInsecureLocalhost: true` permits HTTP only for literal
+`127.0.0.1` and `::1`. The SDK appends a routing key while retaining other query
+parameters. Omitted lifetime uses the server default; `.indefinite` sends null.
+TTL must be a positive safe integer and replay age may be zero.
+
+## Signature and body verification
+
+Secrets use `whsec_` plus base64, default to 32 cryptographically random bytes,
+and accept 24–64 decoded bytes. Standard Webhooks v1 signs the exact
+`webhook-id.timestamp.body` bytes using HMAC-SHA256. The handler checks the
+five-minute timestamp window, rotation signatures, subscription headers,
+event name/ID, ISO timestamps, JSON object data and optional payload validation.
+It limits both buffered and streamed bodies to 256 KiB, regardless of
+Content-Length. Mount it on a route that preserves raw body bytes.
+
+Store signing secrets privately. Callback subscription info deliberately omits
+the secret. No default secret-bearing store or hosted webhook server is bundled.
+
+## Managed adapters
+
+Implement `MCPEventAdapter.createAdapter(transport:)` to return your backend's
+`MCPEventOperations`, then connect with `events: .managed(adapter)`. The factory
+runs once before transport startup and receives the configured HTTP endpoint
+or custom-transport metadata. Managed `subscribe`, `getSubscription`,
+`listSubscriptions` and `unsubscribe(id:)` delegate typed opaque records,
+idempotency keys, lifetimes, statuses and cleanup fields to that backend;
+`events.list()` still uses the MCP catalog. Direct subscriptions and refresh
+require direct-store configuration.
+
+## OAuth
+
+An `invalid_grant` during refresh invalidates only the failed token generation
+and restarts authorization. The same error during authorization-code exchange
+propagates without invalidating credentials or repeating the code exchange.
+Discovery URLs with repeated slashes retain the original authorization-server
+origin. The deprecated legacy SSE transport remains an unported JS adapter;
+native Streamable HTTP and stdio are the supported transports.

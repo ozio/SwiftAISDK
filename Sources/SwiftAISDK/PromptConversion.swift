@@ -66,6 +66,7 @@ func convertToLanguageModelPrompt(_ prompt: StandardizedPrompt) throws -> [AIMes
             continue
         }
         let previousIndex = combinedMessages.count - 1
+        let previousContentWasEmpty = combinedMessages[previousIndex].content.isEmpty
         if let contentIndex = combinedMessages[previousIndex].content.indices.last,
            !combinedMessages[previousIndex].providerMetadata.isEmpty {
             combinedMessages[previousIndex].content[contentIndex] = mergingToolPartProviderMetadata(
@@ -74,7 +75,9 @@ func convertToLanguageModelPrompt(_ prompt: StandardizedPrompt) throws -> [AIMes
             )
         }
         combinedMessages[previousIndex].content.append(contentsOf: message.content)
-        combinedMessages[previousIndex].providerMetadata = message.providerMetadata
+        combinedMessages[previousIndex].providerMetadata = previousContentWasEmpty
+            ? deepMergeProviderMetadata(combinedMessages[previousIndex].providerMetadata, message.providerMetadata)
+            : message.providerMetadata
     }
 
     let filteredMessages = combinedMessages.filter { message in

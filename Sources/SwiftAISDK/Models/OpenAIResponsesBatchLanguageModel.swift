@@ -183,6 +183,7 @@ public final class OpenAIResponsesBatchLanguageModel: BatchLanguageModel, @unche
         let config = self.config
         let providerID = self.providerID
         let modelID = self.modelID
+        let maxLineBytes = try aiBatchResultLineLimit(config.batchResultMaxLineBytes)
         return AsyncThrowingStream { continuation in
             let task = Task {
                 do {
@@ -197,6 +198,7 @@ public final class OpenAIResponsesBatchLanguageModel: BatchLanguageModel, @unche
                             abortSignal: options.abortSignal
                         )
                         let response = try await transport.stream(request)
+                        defer { response.cancelBody() }
                         guard (200..<300).contains(response.statusCode) else {
                             let buffered = try await bufferedHTTPResponse(from: response, request: request)
                             throw openAICompatibleHTTPStatusError(provider: providerID, response: buffered)
@@ -205,6 +207,8 @@ public final class OpenAIResponsesBatchLanguageModel: BatchLanguageModel, @unche
                             response.body,
                             providerID: providerID,
                             abortSignal: options.abortSignal,
+                            url: request.url.absoluteString,
+                            maxLineBytes: maxLineBytes,
                             continuation: continuation
                         )
                     }
@@ -571,23 +575,14 @@ private func yieldOpenAIBatchResultLines(
     _ body: AsyncThrowingStream<Data, Error>,
     providerID: String,
     abortSignal: AIAbortSignal?,
+    url: String,
+    maxLineBytes: Int,
     continuation: AsyncThrowingStream<AIBatchItemResult<TextGenerationResult>, Error>.Continuation
 ) async throws {
-    var buffer = Data()
-    for try await chunk in body {
-        try Task.checkCancellation()
-        try abortSignal?.throwIfAborted()
-        buffer.append(chunk)
-        while let newline = buffer.firstIndex(of: 0x0A) {
-            let line = Data(buffer[..<newline])
-            buffer.removeSubrange(...newline)
-            if let item = try parseOpenAIBatchResultLine(line, providerID: providerID) {
-                continuation.yield(item)
-            }
+    try await aiForEachBatchResultLine(body, url: url, maxLineBytes: maxLineBytes, abortSignal: abortSignal) { line in
+        if let item = try parseOpenAIBatchResultLine(line, providerID: providerID) {
+            continuation.yield(item)
         }
-    }
-    if let item = try parseOpenAIBatchResultLine(buffer, providerID: providerID) {
-        continuation.yield(item)
     }
 }
 

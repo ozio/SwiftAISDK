@@ -6,7 +6,8 @@ extension AI {
     }
 
     public static func embed(model: any EmbeddingModel, request: EmbeddingRequest, retryPolicy: AIRetryPolicy = .default, telemetry: Telemetry.Options? = nil) async throws -> EmbeddingResult {
-        try await withTelemetry(
+        try validateEmbeddingDimensions(request.dimensions)
+        return try await withTelemetry(
             operationID: request.values.count == 1 ? "ai.embed" : "ai.embedMany",
             providerID: model.providerID,
             modelID: model.modelID,
@@ -45,6 +46,7 @@ extension AI {
         retryPolicy: AIRetryPolicy = .default,
         telemetry: Telemetry.Options? = nil
     ) async throws -> EmbeddingResult {
+        try validateEmbeddingDimensions(dimensions)
         let effectiveMaxEmbeddingsPerCall: Int?
         switch (chunkSize, model.maxEmbeddingsPerCall) {
         case let (requested?, providerMaximum?):
@@ -660,6 +662,12 @@ private final class ImageGenerationAttemptAccumulator: @unchecked Sendable {
                 calls: storedCalls
             )
         }
+    }
+}
+
+private func validateEmbeddingDimensions(_ dimensions: Int?) throws {
+    if let dimensions, dimensions <= 0 {
+        throw AIError.invalidArgument(argument: "dimensions", message: "dimensions must be a positive integer.")
     }
 }
 

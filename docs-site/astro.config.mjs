@@ -43,6 +43,8 @@ export default defineConfig({
             { label: 'Stream text', slug: 'core/stream-text' },
             { label: 'Batch text', slug: 'core/batch-text' },
             { label: 'Structured output', slug: 'core/structured-output' },
+            { label: 'Decisions', slug: 'core/decide' },
+            { label: 'Evaluation compatibility', slug: 'core/evaluate' },
             { label: 'Tools', slug: 'core/tools' },
             { label: 'Files', slug: 'core/files' },
             { label: 'Embeddings', slug: 'core/embeddings' },
@@ -61,7 +63,10 @@ export default defineConfig({
         },
         {
           label: 'Cookbook',
-          items: [{ label: 'MCP tools', slug: 'cookbook/mcp-tools' }],
+          items: [
+            { label: 'MCP tools', slug: 'cookbook/mcp-tools' },
+            { label: 'MCP Events', slug: 'cookbook/mcp-events' },
+          ],
         },
         {
           label: 'Components',

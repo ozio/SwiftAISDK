@@ -72,8 +72,8 @@ import Testing
     await #expect(throws: AIError.invalidArgument(argument: "providerOptions.cohere.truncate", message: "Cohere truncate must be one of NONE, START, END.")) {
         _ = try await model.embed(EmbeddingRequest(values: ["hello"], providerOptions: ["cohere": ["truncate": "MIDDLE"]]))
     }
-    await #expect(throws: AIError.invalidArgument(argument: "providerOptions.cohere.outputDimension", message: "Cohere outputDimension must be one of 256, 512, 1024, 1536.")) {
-        _ = try await model.embed(EmbeddingRequest(values: ["hello"], providerOptions: ["cohere": ["outputDimension": 768]]))
+    await #expect(throws: AIError.invalidArgument(argument: "providerOptions.cohere.outputDimension", message: "Cohere outputDimension must be one of 256, 512, 768, 1024, 1536, 2048.")) {
+        _ = try await model.embed(EmbeddingRequest(values: ["hello"], providerOptions: ["cohere": ["outputDimension": 769]]))
     }
 }
 

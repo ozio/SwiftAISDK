@@ -181,9 +181,9 @@ import Testing
     ])
     #expect(input.map { $0["output"]?.stringValue } == [
         #""The weather is sunny""#,
-        #""Error: boom""#,
+        #"{"error":"Error: boom"}"#,
         #""User denied the tool execution""#,
-        "Error: unchanged"
+        #"{"error":"Error: unchanged"}"#
     ])
 }
 

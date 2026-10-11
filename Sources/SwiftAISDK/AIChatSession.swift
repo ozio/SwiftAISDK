@@ -63,6 +63,9 @@ public final class AIChatSession: ObservableObject {
     public var sendAutomaticallyWhen: (@MainActor @Sendable ([AIUIMessage]) -> Bool)?
 
     private var currentTask: Task<Void, Never>?
+    private var inFlightTasks: [UUID: Task<Void, Never>] = [:]
+    private var activeStopCount = 0
+    private var stopGeneration: UInt64 = 0
     private var currentAbortController: AIAbortController?
     private var activeRunID: UUID?
     private var activeResponseMessageID: String?
@@ -177,7 +180,8 @@ public final class AIChatSession: ObservableObject {
                 id: message.id,
                 role: message.role,
                 parts: message.parts,
-                metadata: message.metadata
+                metadata: message.metadata,
+                unavailableStaticToolCallIDs: message.unavailableStaticToolCallIDs
             )
             messages.removeSubrange(index..<messages.endIndex)
             messages.append(userMessage)
@@ -238,6 +242,8 @@ public final class AIChatSession: ObservableObject {
 
         let task = Task { [weak self] in
             guard let self else { return }
+            defer { inFlightTasks.removeValue(forKey: runID) }
+            guard activeRunID == runID, !Task.isCancelled else { return }
             do {
                 guard let stream = try await transport.reconnectToStream(AIChatReconnectRequest(
                     chatID: chatID,
@@ -249,7 +255,10 @@ public final class AIChatSession: ObservableObject {
                     clearRunWithoutFinish(runID: runID)
                     return
                 }
-                guard activeRunID == runID else { return }
+                guard activeRunID == runID else {
+                    await cancelChatStream(stream)
+                    return
+                }
                 status = .submitted
                 await consume(stream, runID: runID)
             } catch {
@@ -257,10 +266,12 @@ public final class AIChatSession: ObservableObject {
             }
         }
         currentTask = task
+        inFlightTasks[runID] = task
         return task
     }
 
     public func stop(reason: String? = "stopped") {
+        stopGeneration &+= 1
         let stoppedRunID = activeRunID
         currentAbortController?.abort(reason: reason)
         currentTask?.cancel()
@@ -274,6 +285,27 @@ public final class AIChatSession: ObservableObject {
             activeConsumedApprovalMessageID = nil
             status = .ready
         }
+    }
+
+    /// Stops immediately and waits for active and superseded session request tasks.
+    /// Custom stream producers own completion of their internal asynchronous work.
+    /// The synchronous ``stop(reason:)`` remains available for UI actions.
+    public func stopAndWait(reason: String? = "stopped") async {
+        activeStopCount += 1
+        defer { activeStopCount -= 1 }
+        let tasks = Array(inFlightTasks.values)
+        stop(reason: reason)
+        for task in tasks { task.cancel() }
+        for task in tasks { await task.value }
+    }
+
+    /// Stops request work before releasing the transport owned by this session.
+    public func dispose() async {
+        activeStopCount += 1
+        defer { activeStopCount -= 1 }
+        let ownedTransport = transport
+        await stopAndWait()
+        await ownedTransport.close()
     }
 
     public func setMessages(_ messages: [AIUIMessage]) {
@@ -361,6 +393,8 @@ public final class AIChatSession: ObservableObject {
 
         let task = Task { [weak self] in
             guard let self else { return }
+            defer { inFlightTasks.removeValue(forKey: runID) }
+            guard activeRunID == runID, !Task.isCancelled else { return }
             do {
                 let stream = try transport.sendMessages(AIChatTransportRequest(
                     chatID: chatID,
@@ -379,6 +413,7 @@ public final class AIChatSession: ObservableObject {
             }
         }
         currentTask = task
+        inFlightTasks[runID] = task
         return task
     }
 
@@ -402,6 +437,15 @@ public final class AIChatSession: ObservableObject {
         } catch {
             finish(runID: runID, error: error, isAbort: false)
         }
+    }
+
+    private func cancelChatStream(_ stream: AsyncThrowingStream<AIUIMessage, Error>) async {
+        let task = Task {
+            var iterator = stream.makeAsyncIterator()
+            _ = try? await iterator.next()
+        }
+        task.cancel()
+        await task.value
     }
 
     private func finish(runID: UUID, error: Error?, isAbort: Bool) {
@@ -434,6 +478,7 @@ public final class AIChatSession: ObservableObject {
         } else {
             status = .ready
         }
+        let finishedGeneration = stopGeneration
         onFinish?(AIChatSessionFinishEvent(
             message: finishedMessage,
             messages: messages,
@@ -442,7 +487,7 @@ public final class AIChatSession: ObservableObject {
             isError: isError,
             finishReason: finishReason
         ))
-        if !isAbort && !isError {
+        if !isAbort && !isError && stopGeneration == finishedGeneration {
             triggerAutomaticSendIfNeeded(options: activeRequestOptions)
         }
     }
@@ -476,7 +521,12 @@ public final class AIChatSession: ObservableObject {
         options: AIChatSessionRequestOptions,
         approvalMessageID: String? = nil
     ) {
-        guard !isRunning, sendAutomaticallyWhen?(messages) == true else { return }
+        guard activeStopCount == 0, !isRunning else { return }
+        let generation = stopGeneration
+        guard sendAutomaticallyWhen?(messages) == true,
+              activeStopCount == 0,
+              generation == stopGeneration,
+              !isRunning else { return }
         guard messages.last?.parts.contains(where: { part in
             guard case let .toolResult(result) = part else { return false }
             return result.preliminary

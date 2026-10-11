@@ -13,7 +13,7 @@ public extension AmazonBedrockImageModel {
 
 public extension BlackForestLabsImageModel {
     var supportsFileInputs: Bool? {
-        if ["flux-kontext-pro", "flux-kontext-max", "flux-pro-1.0-fill"].contains(modelID) { return true }
+        if ["flux-kontext-pro", "flux-kontext-max", "flux-pro-1.0-fill", "flux-3-image"].contains(modelID) { return true }
         if ["flux-pro-1.1-ultra", "flux-pro-1.1"].contains(modelID) { return false }
         return nil
     }
@@ -108,7 +108,7 @@ public extension TogetherAIImageModel {
 
 public extension XAIImageModel {
     var supportsFileInputs: Bool? {
-        if ["grok-imagine-image", "grok-imagine-image-pro"].contains(modelID) { return true }
+        if ["grok-imagine-image", "grok-imagine-image-pro", "grok-imagine-image-2.0"].contains(modelID) { return true }
         return nil
     }
 

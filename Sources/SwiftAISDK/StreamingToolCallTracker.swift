@@ -59,7 +59,8 @@ public struct AIStreamingToolCallTracker: Sendable {
         let wireID = nonBlank(delta.id)
         let name = nonBlank(delta.functionName)
         let hasExplicitStart = name != nil && delta.arguments?.first(where: { !$0.isWhitespace }).map { $0 == "{" || $0 == "[" } == true
-        let resolution = resolve(wireID: wireID, index: delta.index, name: name, hasExplicitStart: hasExplicitStart)
+        let hasEmptyArguments = delta.arguments?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true
+        let resolution = resolve(wireID: wireID, index: delta.index, name: name, hasExplicitStart: hasExplicitStart, hasEmptyArguments: hasEmptyArguments)
         let resolvedPosition: Int
         let parts: [LanguageStreamPart]
         switch resolution {
@@ -97,7 +98,7 @@ public struct AIStreamingToolCallTracker: Sendable {
 
     private enum Resolution { case new, existing(Int), ambiguous }
 
-    private func resolve(wireID: String?, index: Int?, name: String?, hasExplicitStart: Bool) -> Resolution {
+    private func resolve(wireID: String?, index: Int?, name: String?, hasExplicitStart: Bool, hasEmptyArguments: Bool) -> Resolution {
         let indexed = index.flatMap { toolCallPositionsByIndex[$0] }
         let matchingIndexed = (indexed ?? []).filter { name == nil || toolCalls[$0].name == name }
         if let wireID {
@@ -113,20 +114,23 @@ public struct AIStreamingToolCallTracker: Sendable {
                 return resolveMatching(byID.filter { name == nil || toolCalls[$0].name == name }, hasExplicitStart: name != nil && hasExplicitStart)
             }
             if !matchingIndexed.isEmpty {
-                return hasExplicitStart ? .new : resolveMatching(matchingIndexed, hasExplicitStart: false)
+                return hasExplicitStart ? .new : resolveMatching(matchingIndexed, hasExplicitStart: name != nil && hasEmptyArguments)
             }
             return .new
         }
         if indexed != nil { return resolveMatching(matchingIndexed, hasExplicitStart: hasExplicitStart) }
         if name != nil { return .new }
         let unfinished = toolCalls.indices.filter { !toolCalls[$0].hasFinished }
-        return unfinished.count == 1 ? .existing(unfinished[0]) : unfinished.isEmpty ? .new : .ambiguous
+        return resolveMatching(unfinished, hasExplicitStart: false)
     }
 
     private func resolveMatching(_ positions: [Int], hasExplicitStart: Bool) -> Resolution {
         if positions.isEmpty { return .new }
-        let candidates = hasExplicitStart ? positions.filter { !toolCalls[$0].argumentState.complete } : positions
-        return candidates.count == 1 ? .existing(candidates[0]) : candidates.isEmpty ? .new : .ambiguous
+        if !hasExplicitStart && positions.count == 1 { return .existing(positions[0]) }
+        let candidates = positions.filter { !toolCalls[$0].argumentState.complete }
+        if candidates.count == 1 { return .existing(candidates[0]) }
+        if candidates.count > 1 || !hasExplicitStart { return .ambiguous }
+        return .new
     }
 
     private func nonBlank(_ value: String?) -> String? {

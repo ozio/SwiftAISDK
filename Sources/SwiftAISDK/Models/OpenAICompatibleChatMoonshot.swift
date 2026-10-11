@@ -68,7 +68,7 @@ func moonshotChatBody(
             body["reasoning_effort"] = .string("low")
         case "medium", "high":
             body["reasoning_effort"] = .string("high")
-        case "xhigh":
+        case "xhigh", "max":
             body["reasoning_effort"] = .string("max")
         default:
             warnings.append(AIWarning(type: "unsupported", feature: "reasoning effort \(reasoning)"))

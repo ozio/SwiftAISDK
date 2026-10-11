@@ -18,11 +18,13 @@ public final class GoogleVertexLanguageModel: LanguageModel, @unchecked Sendable
             transport: config.transport,
             maxBytes: config.toolResultDownloadsMaxBytes
         )
-        let prepared = try googleGenerateContentBody(resolvedRequest, modelID: modelID, providerID: providerID)
+        let jsonResponse = googlePrepareJSONResponseToolRequest(resolvedRequest, modelID: modelID)
+        let prepared = try googleGenerateContentBody(jsonResponse.request, modelID: modelID, providerID: providerID)
         let response = try await config.sendJSONResponse(path: "/models/\(modelID):generateContent", body: prepared.body, headers: request.headers.mergingHeaders(prepared.headers), abortSignal: request.abortSignal)
         let raw = response.json
-        let text = googleGenerateContentText(from: raw)
-        let toolCalls = googleGenerateContentToolCalls(from: raw, toolNameMapping: prepared.toolNameMapping)
+        let parsed = googleConvertJSONResponseTool(raw, name: jsonResponse.name)
+        let text = googleGenerateContentText(from: parsed, includeThoughts: jsonResponse.name == nil)
+        let toolCalls = googleGenerateContentToolCalls(from: parsed, toolNameMapping: prepared.toolNameMapping)
         let toolResults = googleGenerateContentToolResults(from: raw, toolNameMapping: prepared.toolNameMapping)
         let finishReason = googleGenerateContentFinishReason(from: raw, hasToolCalls: !toolCalls.isEmpty)
         guard text != nil || !toolCalls.isEmpty || !toolResults.isEmpty || finishReason == "content-filter" else {
@@ -30,6 +32,8 @@ public final class GoogleVertexLanguageModel: LanguageModel, @unchecked Sendable
         }
         return TextGenerationResult(
             text: text ?? "",
+            content: jsonResponse.name == nil ? [] : googleJSONResponseToolContent(from: parsed, toolNameMapping: prepared.toolNameMapping),
+            reasoning: jsonResponse.name == nil ? "" : googleGenerateContentReasoning(from: parsed),
             finishReason: finishReason,
             usage: googleGenerateContentUsage(from: raw),
             toolCalls: toolCalls,
@@ -52,7 +56,8 @@ public final class GoogleVertexLanguageModel: LanguageModel, @unchecked Sendable
                         transport: config.transport,
                         maxBytes: config.toolResultDownloadsMaxBytes
                     )
-                    let prepared = try googleGenerateContentBody(resolvedRequest, modelID: modelID, providerID: providerID, isStreaming: true)
+                    let jsonResponse = googlePrepareJSONResponseToolRequest(resolvedRequest, modelID: modelID)
+                    let prepared = try googleGenerateContentBody(jsonResponse.request, modelID: modelID, providerID: providerID, isStreaming: true)
                     let httpRequest = try await config.request(
                         path: "/models/\(modelID):streamGenerateContent?alt=sse",
                         body: prepared.body,
@@ -68,7 +73,8 @@ public final class GoogleVertexLanguageModel: LanguageModel, @unchecked Sendable
                         includeRawChunks: request.includeRawChunks,
                         modelID: modelID,
                         warnings: prepared.warnings,
-                        toolNameMapping: prepared.toolNameMapping
+                        toolNameMapping: prepared.toolNameMapping,
+                        jsonResponseToolName: jsonResponse.name
                     )
                     for try await event in serverSentEvents(from: response.body) {
                         if event.data == "[DONE]" { break }
@@ -642,17 +648,51 @@ public final class GoogleVertexImageModel: ImageModel, @unchecked Sendable {
 
     public func generateImage(_ request: ImageGenerationRequest) async throws -> ImageGenerationResult {
         if modelID.starts(with: "gemini-") {
-            let languageResult = try await GoogleVertexLanguageModel(modelID: modelID, config: config).generate(LanguageModelRequest(messages: [.user(request.prompt)], extraBody: request.extraBody, headers: request.headers, abortSignal: request.abortSignal))
-            let images = languageResult.rawValue["candidates"]?[0]?["content"]?["parts"]?.arrayValue?.compactMap { part in
+            if request.mask != nil {
+                throw AIError.invalidArgument(argument: "mask", message: "Gemini image models do not support mask-based image editing.")
+            }
+            if let count = request.count, count > 1 {
+                throw AIError.invalidArgument(argument: "count", message: "Gemini image models do not support generating a set number of images per call. Use n=1 or omit the n parameter.")
+            }
+            let extraOptions = googleVertexImageProviderOptions(from: request.extraBody)
+            var options = extraOptions
+            options.merge(request.providerOptions["googleVertex"]?.objectValue ?? request.providerOptions["vertex"]?.objectValue ?? [:]) { _, providerValue in providerValue }
+            options["responseModalities"] = ["IMAGE"]
+            if let aspectRatio = request.aspectRatio ?? extraOptions["aspectRatio"]?.stringValue {
+                var imageConfig = options["imageConfig"]?.objectValue ?? [:]
+                imageConfig["aspectRatio"] = .string(aspectRatio)
+                options["imageConfig"] = .object(imageConfig)
+            }
+            let prepared = try googleGenerateContentBody(LanguageModelRequest(
+                messages: [.user(request.prompt)], seed: request.seed,
+                providerOptions: ["googleVertex": .object(options)], extraBody: extraOptions
+            ), modelID: modelID, providerID: providerID)
+            var body = prepared.body.objectValue ?? [:]
+            // Share the native image input conversion, including URL media types
+            // and the caller's exact binary Data range, with the Google provider.
+            body["contents"] = try GoogleGenerativeLanguageModel.imageGenerationContentBody(
+                prompt: request.prompt, aspectRatio: request.aspectRatio, files: request.files
+            )["contents"]
+            let response = try await config.sendJSONResponse(path: "/models/\(modelID):generateContent", body: .object(body), headers: request.headers.mergingHeaders(prepared.headers), abortSignal: request.abortSignal)
+            let raw = response.json
+            let images = raw["candidates"]?[0]?["content"]?["parts"]?.arrayValue?.compactMap { part in
                 part["inlineData"]?["data"]?.stringValue
             } ?? []
+            var warnings = prepared.warnings
+            if request.size != nil {
+                warnings.append(AIWarning(type: "unsupported", feature: "size", message: "This model does not support the `size` option. Use `aspectRatio` instead."))
+            }
+            let imageMetadata: JSONValue = ["images": .array(images.map { _ in .object([:]) })]
             return ImageGenerationResult(
                 urls: [],
                 base64Images: images,
-                rawValue: languageResult.rawValue,
-                requestMetadata: imageGenerationRequestMetadata(request),
-                responseMetadata: languageResult.responseMetadata,
-                isRetryable: languageResult.finishReason == "content-filter" ? false : nil
+                rawValue: raw,
+                warnings: warnings,
+                usage: googleGenerateContentUsage(from: raw),
+                providerMetadata: ["googleVertex": imageMetadata, "vertex": imageMetadata],
+                requestMetadata: imageGenerationRequestMetadata(request, body: .object(body)),
+                responseMetadata: googleGenerateContentResponseMetadata(from: raw, response: response.response, modelID: modelID),
+                isRetryable: googleGenerateContentFinishReason(from: raw, hasToolCalls: false) == "content-filter" ? false : nil
             )
         }
 

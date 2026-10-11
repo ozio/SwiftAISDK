@@ -134,13 +134,16 @@ public final class XAISpeechModel: SpeechModel, @unchecked Sendable {
     }
 }
 
-public final class XAITranscriptionModel: TranscriptionModel, @unchecked Sendable {
+public final class XAITranscriptionModel: TranscriptionModel, StreamingTranscriptionModel, @unchecked Sendable {
     public let providerID = "xai.transcription"
-    public let modelID = ""
+    public let modelID: String
     private let config: ModelHTTPConfig
+    private let webSocketTransport: any AIDuplexWebSocketTransport
 
-    init(config: ModelHTTPConfig) {
+    init(modelID: String = "", config: ModelHTTPConfig, webSocketTransport: any AIDuplexWebSocketTransport = URLSessionDuplexWebSocketTransport.shared) {
+        self.modelID = modelID
         self.config = config
+        self.webSocketTransport = webSocketTransport
     }
 
     public func transcribe(_ request: AudioTranscriptionRequest) async throws -> TranscriptionResult {
@@ -153,7 +156,7 @@ public final class XAITranscriptionModel: TranscriptionModel, @unchecked Sendabl
                 "byteLength": .number(Double(request.audio.count))
             ])
         ]
-        for (key, value) in xaiTranscriptionFields(from: request, options: options) {
+        for (key, value) in xaiTranscriptionFields(from: request, options: options, modelID: modelID) {
             if key == "keyterm", case let .array(items) = value {
                 metadataBody[key] = value
                 for item in items {
@@ -181,13 +184,24 @@ public final class XAITranscriptionModel: TranscriptionModel, @unchecked Sendabl
             throw audioProviderHTTPStatusError(provider: providerID, response: response)
         }
         let raw = try response.jsonValue()
+        guard raw["text"]?.stringValue != nil, xaiTranscriptionNullableString(raw["language"]), xaiTranscriptionNullableNumber(raw["duration"]),
+              raw["words"] == nil || raw["words"] == .null || raw["words"]?.arrayValue?.allSatisfy({ word in
+                  word["text"]?.stringValue != nil && word["start"]?.doubleValue != nil && word["end"]?.doubleValue != nil && xaiTranscriptionNullableNumber(word["speaker"])
+              }) == true else {
+            throw AIError.invalidResponse(provider: providerID, message: "Invalid xAI transcription response.")
+        }
         let segments = xaiTranscriptionSegments(from: raw)
+        let words = raw["words"]?.arrayValue ?? []
+        let metadata: [String: JSONValue] = words.contains { $0["speaker"] != nil && $0["speaker"] != .null }
+            ? ["xai": .object(["words": .array(words.map { .object(($0.objectValue ?? [:]).filter { ["text", "start", "end", "speaker"].contains($0.key) }) })])]
+            : [:]
         return TranscriptionResult(
             text: raw["text"]?.stringValue ?? "",
             rawValue: raw,
             segments: segments,
             language: raw["language"]?.stringValue,
             durationInSeconds: raw["duration"]?.doubleValue ?? transcriptionDuration(from: segments),
+            providerMetadata: metadata,
             requestMetadata: AIRequestMetadata(body: .object(metadataBody), headers: request.headers),
             responseMetadata: aiResponseMetadata(from: raw, response: response, modelID: modelID)
         )
@@ -796,13 +810,13 @@ private func xaiValidateSpeechProviderOptions(_ options: [String: JSONValue]) th
 private func xaiValidateTranscriptionProviderOptions(_ options: [String: JSONValue]) throws -> [String: JSONValue] {
     var output: [String: JSONValue] = [:]
     for (key, value) in options {
-        if value == .null {
+        if value == .null, !["vadThreshold", "streaming"].contains(key) {
             continue
         }
         switch key {
         case "audioFormat":
-            guard let format = value.stringValue, ["pcm", "mulaw", "alaw"].contains(format) else {
-                throw AIError.invalidArgument(argument: "providerOptions.xai.audioFormat", message: "xAI audioFormat must be pcm, mulaw, or alaw.")
+            guard let format = value.stringValue, ["pcm", "mulaw", "alaw", "opus"].contains(format) else {
+                throw AIError.invalidArgument(argument: "providerOptions.xai.audioFormat", message: "xAI audioFormat must be pcm, mulaw, alaw, or opus.")
             }
             output[key] = value
         case "sampleRate":
@@ -837,8 +851,21 @@ private func xaiValidateTranscriptionProviderOptions(_ options: [String: JSONVal
             } else {
                 throw AIError.invalidArgument(argument: "providerOptions.xai.keyterm", message: "xAI keyterm must be a string or an array of strings.")
             }
+        case "vadThreshold":
+            guard let number = value.doubleValue, number.isFinite, (0...1).contains(number) else { throw AIError.invalidArgument(argument: "providerOptions.xai.vadThreshold", message: "xAI vadThreshold must be between 0 and 1.") }
+            output[key] = value
         case "streaming":
-            continue
+            guard let streaming = value.objectValue else { throw AIError.invalidArgument(argument: "providerOptions.xai.streaming", message: "xAI streaming options must be an object.") }
+            var fields: [String: JSONValue] = [:]
+            for (name, value) in streaming where ["interimResults", "endpointing", "smartTurn", "smartTurnTimeout"].contains(name) {
+                let valid: Bool
+                if name == "interimResults" { valid = value.boolValue != nil }
+                else if name == "smartTurn" { valid = value.doubleValue.map { $0.isFinite && (0...1).contains($0) } ?? false }
+                else { valid = value.intValue.map { value.doubleValue == Double($0) && ((name == "endpointing" ? 0 : 1)...5000).contains($0) } ?? false }
+                if !valid { throw AIError.invalidArgument(argument: "providerOptions.xai.streaming.\(name)", message: "Invalid xAI streaming option \(name).") }
+                fields[name] = value
+            }
+            output[key] = .object(fields)
         default:
             break
         }
@@ -846,8 +873,9 @@ private func xaiValidateTranscriptionProviderOptions(_ options: [String: JSONVal
     return output
 }
 
-private func xaiTranscriptionFields(from request: AudioTranscriptionRequest, options: [String: JSONValue]) -> [String: JSONValue] {
+private func xaiTranscriptionFields(from request: AudioTranscriptionRequest, options: [String: JSONValue], modelID: String) -> [String: JSONValue] {
     var fields: [String: JSONValue] = [:]
+    if !modelID.isEmpty { fields["model"] = .string(modelID) }
     if let audioFormat = options["audioFormat"] { fields["audio_format"] = audioFormat }
     if let sampleRate = options["sampleRate"] { fields["sample_rate"] = sampleRate }
     if let language = request.language.map(JSONValue.string) ?? options["language"] { fields["language"] = language }
@@ -856,6 +884,7 @@ private func xaiTranscriptionFields(from request: AudioTranscriptionRequest, opt
     if let channels = options["channels"] { fields["channels"] = channels }
     if let diarize = options["diarize"] { fields["diarize"] = diarize }
     if let fillerWords = options["fillerWords"] { fields["filler_words"] = fillerWords }
+    fields["vad_threshold"] = options["vadThreshold"]
     if let keyterm = options["keyterm"] {
         if let string = keyterm.stringValue {
             fields["keyterm"] = .array([.string(string)])
@@ -885,13 +914,13 @@ private func xaiValidateImageProviderOptions(_ options: [String: JSONValue]) thr
             }
             output[key] = value
         case "resolution":
-            guard let resolution = value.stringValue, ["1k", "2k"].contains(resolution) else {
-                throw AIError.invalidArgument(argument: "providerOptions.xai.resolution", message: "xAI resolution must be 1k or 2k.")
+            guard let resolution = value.stringValue, ["1k", "1.5k", "2k"].contains(resolution) else {
+                throw AIError.invalidArgument(argument: "providerOptions.xai.resolution", message: "xAI resolution must be 1k, 1.5k, or 2k.")
             }
             output[key] = value
         case "quality":
-            guard let quality = value.stringValue, ["low", "medium", "high"].contains(quality) else {
-                throw AIError.invalidArgument(argument: "providerOptions.xai.quality", message: "xAI quality must be low, medium, or high.")
+            guard let quality = value.stringValue, ["low", "medium", "high", "auto"].contains(quality) else {
+                throw AIError.invalidArgument(argument: "providerOptions.xai.quality", message: "xAI quality must be low, medium, high, or auto.")
             }
             output[key] = value
         default:
@@ -1244,3 +1273,167 @@ private func xaiPollInterval(_ extraBody: [String: JSONValue]) -> UInt64 {
     guard let milliseconds = extraBody["pollIntervalMs"]?.doubleValue else { return 5_000_000_000 }
     return UInt64(max(milliseconds, 1) * 1_000_000.0)
 }
+
+extension XAITranscriptionModel {
+    public func stream(_ request: StreamingTranscriptionRequest) async throws -> StreamingTranscriptionResult {
+        let rawOptions = request.providerOptions["xai"]
+        guard rawOptions == nil || rawOptions == .null || rawOptions?.objectValue != nil else {
+            throw AIError.invalidArgument(argument: "providerOptions.xai", message: "xAI provider options must be an object.")
+        }
+        let options = try xaiValidateTranscriptionProviderOptions(rawOptions?.objectValue ?? [:])
+        if options["multichannel"] == true, options["channels"] == nil {
+            throw AIError.invalidArgument(argument: "providerOptions.xai.channels", message: "providerOptions.xai.channels is required when providerOptions.xai.multichannel is true")
+        }
+        var warnings: [AIWarning] = []
+        if options["format"] != nil { warnings.append(AIWarning(type: "unsupported", feature: "providerOptions.xai.format", message: "xAI streaming transcription does not support format.")) }
+        let encodings = ["audio/pcm": "pcm", "audio/pcmu": "mulaw", "audio/pcma": "alaw", "audio/opus": "opus"]
+        if options["audioFormat"] == nil, encodings[request.inputAudioFormat.mediaType] == nil {
+            warnings.append(AIWarning(type: "other", message: "Unrecognized inputAudioFormat.type \"\(request.inputAudioFormat.mediaType)\"; falling back to raw PCM encoding. Use audio/pcm, audio/pcmu, audio/pcma, audio/opus, or set providerOptions.xai.audioFormat explicitly."))
+        }
+        do { try request.abortSignal?.throwIfAborted() }
+        catch { request.audio.cancelFromConsumer(); throw error }
+        let http = try config.rawRequest(path: "/stt", modelID: modelID, body: Data(), contentType: nil, headers: request.headers, abortSignal: request.abortSignal)
+        guard var components = URLComponents(url: http.url, resolvingAgainstBaseURL: false) else { throw AIError.invalidURL(http.url.absoluteString) }
+        components.scheme = components.scheme == "http" ? "ws" : "wss"
+        var fields = xaiTranscriptionFields(from: AudioTranscriptionRequest(audio: Data(), mimeType: request.inputAudioFormat.mediaType), options: options, modelID: modelID)
+        fields.removeValue(forKey: "audio_format")
+        fields.removeValue(forKey: "format")
+        fields["encoding"] = options["audioFormat"] ?? .string(encodings[request.inputAudioFormat.mediaType] ?? "pcm")
+        if fields["sample_rate"] == nil, let rate = request.inputAudioFormat.sampleRate { fields["sample_rate"] = .number(Double(rate)) }
+        if let streaming = options["streaming"]?.objectValue {
+            for (name, value) in streaming {
+                let mapped = ["interimResults": "interim_results", "endpointing": "endpointing", "smartTurn": "smart_turn", "smartTurnTimeout": "smart_turn_timeout"][name]!
+                fields[mapped] = value
+            }
+        }
+        var items = components.queryItems ?? []
+        for key in fields.keys.sorted() {
+            let values = fields[key]!.arrayValue ?? [fields[key]!]
+            for value in values { if let scalar = jsonScalarString(value) { items.append(URLQueryItem(name: key, value: scalar)) } }
+        }
+        components.queryItems = items
+        guard let url = components.url else { throw AIError.invalidURL(http.url.absoluteString) }
+        let connection: any AIDuplexWebSocketConnection
+        do { connection = try await webSocketTransport.connect(AIDuplexWebSocketRequest(url: url, headers: http.headers, abortSignal: request.abortSignal)) }
+        catch { request.audio.cancelFromConsumer(); throw error }
+        let session = XAIStreamingTranscriptionSession(connection: connection, request: request, warnings: warnings,
+                                                       language: options["language"]?.stringValue,
+                                                       expectedDoneCount: options["multichannel"] == true ? options["channels"]!.intValue! : 1)
+        let stream = await session.start()
+        return StreamingTranscriptionResult(stream: stream, requestMetadata: AIRequestMetadata(body: .string(url.absoluteString), headers: request.headers),
+                                            responseMetadata: AIResponseMetadata(timestamp: Date(), modelID: modelID), cancel: { Task { await session.cancel() } })
+    }
+}
+
+private actor XAIStreamingTranscriptionSession {
+    let connection: any AIDuplexWebSocketConnection
+    let request: StreamingTranscriptionRequest
+    let warnings: [AIWarning]
+    let language: String?
+    let expectedDoneCount: Int
+    var continuation: AsyncThrowingStream<StreamingTranscriptionPart, Error>.Continuation?
+    var eventTask: Task<Void, Never>?
+    var audioTask: Task<Void, Never>?
+    var abortRegistration: AIAbortHandlerRegistration?
+    var completed = false
+    var audioStarted = false
+    var doneTexts: [Int: String] = [:]
+    var finalizedTexts: [Int: [String]] = [:]
+    var pendingTexts: [Int: String] = [:]
+    var duration: Double?
+
+    init(connection: any AIDuplexWebSocketConnection, request: StreamingTranscriptionRequest, warnings: [AIWarning], language: String?, expectedDoneCount: Int) {
+        self.connection = connection; self.request = request; self.warnings = warnings; self.language = language; self.expectedDoneCount = expectedDoneCount
+    }
+    func start() -> AsyncThrowingStream<StreamingTranscriptionPart, Error> {
+        let pair = AsyncThrowingStream<StreamingTranscriptionPart, Error>.makeStream()
+        continuation = pair.continuation
+        continuation?.onTermination = { termination in if case .cancelled = termination { Task { await self.cancel() } } }
+        abortRegistration = request.abortSignal?.addAbortHandler { [weak signal = request.abortSignal] reason in
+            let error = AIAbortError(reason: reason, reasonName: signal?.reasonName)
+            Task { await self.complete(error: error, finish: nil) }
+        }
+        eventTask = Task { await consumeEvents() }
+        return pair.stream
+    }
+    func cancel() async { await complete(error: nil, finish: nil) }
+    private func consumeEvents() async {
+        do {
+            for try await event in connection.events {
+                guard !completed else { return }
+                switch event {
+                case .opened: break
+                case .closed: await complete(error: nil, finish: nil)
+                case let .message(message):
+                    let data: Data
+                    switch message { case let .text(text): data = Data(text.utf8); case let .binary(bytes): data = bytes }
+                    guard let raw = try? decodeJSONBody(data) else { continue }
+                    if request.includeRawChunks { continuation?.yield(.raw(raw)) }
+                    await process(raw)
+                }
+            }
+            if !completed { await complete(error: nil, finish: nil) }
+        } catch { await complete(error: error, finish: nil) }
+    }
+    private func process(_ raw: JSONValue) async {
+        let channel = raw["channel_index"]?.intValue
+        let channelIndex = channel ?? 0
+        let id = channel.map { "channel-\($0)" }
+        let text = raw["text"]?.stringValue ?? ""
+        switch raw["type"]?.stringValue {
+        case "transcript.created":
+            guard !audioStarted else { return }
+            audioStarted = true
+            continuation?.yield(.streamStart(warnings: warnings))
+            audioTask = Task { await sendAudio() }
+        case "transcript.partial":
+            let start = raw["start"]?.doubleValue
+            let duration = raw["duration"]?.doubleValue
+            if raw["is_final"] == true, raw["speech_final"] == true {
+                if !text.isEmpty { finalizedTexts[channelIndex, default: []].append(text) }
+                pendingTexts.removeValue(forKey: channelIndex)
+                continuation?.yield(.transcriptFinal(id: id, text: text, startSecond: start, endSecond: start.flatMap { start in duration.map { start + $0 } }, channelIndex: channel))
+            } else {
+                pendingTexts[channelIndex] = text
+                continuation?.yield(.transcriptPartial(id: id, text: text, startSecond: start, durationInSeconds: duration, channelIndex: channel))
+            }
+        case "transcript.done":
+            let pending = pendingTexts[channelIndex].flatMap { $0.isEmpty ? nil : $0 }
+            let accumulated = ((finalizedTexts[channelIndex] ?? []) + (pending.map { [$0] } ?? [])).joined(separator: " ")
+            doneTexts[channelIndex] = text.isEmpty ? accumulated : text
+            duration = raw["duration"]?.doubleValue ?? duration
+            if doneTexts.count >= expectedDoneCount {
+                let text = doneTexts.sorted { $0.key < $1.key }.map(\.value).joined(separator: "\n")
+                await complete(error: nil, finish: StreamingTranscriptionFinish(text: text, language: language, durationInSeconds: duration))
+            }
+        case "error": await complete(error: AIStreamingTranscriptionError(provider: "xai.transcription", message: raw["message"]?.stringValue ?? "xAI STT error", rawValue: raw), finish: nil)
+        default: break
+        }
+    }
+    private func sendAudio() async {
+        do {
+            for try await chunk in request.audio {
+                guard !completed else { return }
+                try Task.checkCancellation()
+                try request.abortSignal?.throwIfAborted()
+                try await connection.send(binary: chunk)
+            }
+            guard !completed else { return }
+            try await connection.send(text: "{\"type\":\"audio.done\"}")
+        } catch { await complete(error: error, finish: nil) }
+    }
+    private func complete(error: Error?, finish: StreamingTranscriptionFinish?) async {
+        guard !completed else { return }
+        completed = true
+        eventTask?.cancel(); audioTask?.cancel(); abortRegistration?.cancel()
+        eventTask = nil; audioTask = nil; abortRegistration = nil
+        request.audio.cancelFromConsumer()
+        if let finish { continuation?.yield(.finish(finish)) }
+        if let error { continuation?.finish(throwing: error) } else { continuation?.finish() }
+        continuation = nil
+        await connection.close(code: finish == nil ? 1001 : 1000)
+    }
+}
+
+private func xaiTranscriptionNullableString(_ value: JSONValue?) -> Bool { value == nil || value == .null || value?.stringValue != nil }
+private func xaiTranscriptionNullableNumber(_ value: JSONValue?) -> Bool { value == nil || value == .null || value?.doubleValue?.isFinite == true }

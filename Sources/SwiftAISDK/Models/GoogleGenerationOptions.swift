@@ -15,6 +15,7 @@ func googlePrepareGenerateContentOptions(
     isVertexProvider: Bool
 ) -> GooglePreparedGenerateContentOptions {
     var options = googleGenerateContentOptions(from: request.extraBody)
+    if let toolChoice = request.toolChoice { options["toolChoice"] = toolChoice }
     let providerOptionsNames = isVertexProvider ? ["googleVertex", "vertex", "google"] : ["google"]
     for name in providerOptionsNames {
         guard let providerOptions = request.providerOptions[name]?.objectValue else { continue }
@@ -179,7 +180,8 @@ func googleThinkingConfig(for reasoning: String?, modelID: String, warnings: ino
             "low": "low",
             "medium": "medium",
             "high": "high",
-            "xhigh": "high"
+            "xhigh": "high",
+            "max": "high"
         ]
         guard let mapped = effortMap[reasoning] else {
             warnings.append(AIWarning(type: "unsupported", feature: "reasoning", message: "reasoning \"\(reasoning)\" is not supported by this model."))

@@ -684,15 +684,17 @@ extension AI {
         )
         let operationRequest = requestWithTimeoutSignals
         let outputStream = outputStreamWithRetries(streamRetries: streamRetries) {
-            output.streamFromRequest(
-                model,
-                operationRequest,
-                nil,
-                retryPolicy,
-                telemetry,
-                jsonInstruction,
-                repairText
-            )
+            AIDeprecationLogging.$suppressObjectWarnings.withValue(true) {
+                output.streamFromRequest(
+                    model,
+                    operationRequest,
+                    nil,
+                    retryPolicy,
+                    telemetry,
+                    jsonInstruction,
+                    repairText
+                )
+            }
         }
         let semanticTimedStream = streamWithSemanticOutputTimeouts(
             outputStream,

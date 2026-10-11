@@ -106,7 +106,8 @@ func xaiReasoningEffort(
             "low": "low",
             "medium": "medium",
             "high": "high",
-            "xhigh": modelID == "grok-4.6" ? "xhigh" : "high"
+            "xhigh": modelID == "grok-4.6" ? "xhigh" : "high",
+            "max": modelID == "grok-4.6" ? "xhigh" : "high"
         ],
         warnings: &warnings
     )

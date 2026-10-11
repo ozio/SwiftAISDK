@@ -12,7 +12,8 @@ public final class GoogleGenerativeLanguageModel: LanguageModel, @unchecked Send
     }
 
     public func generate(_ request: LanguageModelRequest) async throws -> TextGenerationResult {
-        let prepared = try Self.generateContentBody(for: request, modelID: modelID)
+        let jsonResponse = googlePrepareJSONResponseToolRequest(request, modelID: modelID)
+        let prepared = try Self.generateContentBody(for: jsonResponse.request, modelID: modelID)
         let response = try await config.sendJSONResponse(
             path: "/models/\(modelID):generateContent",
             modelID: modelID,
@@ -21,8 +22,9 @@ public final class GoogleGenerativeLanguageModel: LanguageModel, @unchecked Send
             abortSignal: request.abortSignal
         )
         let raw = response.json
-        let text = googleGenerateContentText(from: raw)
-        let toolCalls = googleGenerateContentToolCalls(from: raw, toolNameMapping: prepared.toolNameMapping)
+        let parsed = googleConvertJSONResponseTool(raw, name: jsonResponse.name)
+        let text = googleGenerateContentText(from: parsed, includeThoughts: jsonResponse.name == nil)
+        let toolCalls = googleGenerateContentToolCalls(from: parsed, toolNameMapping: prepared.toolNameMapping)
         let toolResults = googleGenerateContentToolResults(from: raw, toolNameMapping: prepared.toolNameMapping)
         let finishReason = googleGenerateContentFinishReason(from: raw, hasToolCalls: !toolCalls.isEmpty)
         guard text != nil || !toolCalls.isEmpty || !toolResults.isEmpty || finishReason == "content-filter" else {
@@ -30,6 +32,8 @@ public final class GoogleGenerativeLanguageModel: LanguageModel, @unchecked Send
         }
         return TextGenerationResult(
             text: text ?? "",
+            content: jsonResponse.name == nil ? [] : googleJSONResponseToolContent(from: parsed, toolNameMapping: prepared.toolNameMapping),
+            reasoning: jsonResponse.name == nil ? "" : googleGenerateContentReasoning(from: parsed),
             finishReason: finishReason,
             usage: googleGenerateContentUsage(from: raw),
             toolCalls: toolCalls,
@@ -46,7 +50,8 @@ public final class GoogleGenerativeLanguageModel: LanguageModel, @unchecked Send
         AsyncThrowingStream { continuation in
             let task = Task {
                 do {
-                    let prepared = try Self.generateContentBody(for: request, modelID: modelID, isStreaming: true)
+                    let jsonResponse = googlePrepareJSONResponseToolRequest(request, modelID: modelID)
+                    let prepared = try Self.generateContentBody(for: jsonResponse.request, modelID: modelID, isStreaming: true)
                     let httpRequest = try config.request(
                         path: "/models/\(modelID):streamGenerateContent?alt=sse",
                         modelID: modelID,
@@ -63,7 +68,8 @@ public final class GoogleGenerativeLanguageModel: LanguageModel, @unchecked Send
                         includeRawChunks: request.includeRawChunks,
                         modelID: modelID,
                         warnings: prepared.warnings,
-                        toolNameMapping: prepared.toolNameMapping
+                        toolNameMapping: prepared.toolNameMapping,
+                        jsonResponseToolName: jsonResponse.name
                     )
                     for try await event in serverSentEvents(from: response.body) {
                         if event.data == "[DONE]" { break }
@@ -144,6 +150,42 @@ struct GoogleGenerateContentPreparedCall {
     var warnings: [AIWarning]
     var headers: [String: String]
     var toolNameMapping: AIToolNameMapping
+}
+
+func googlePrepareJSONResponseToolRequest(
+    _ request: LanguageModelRequest,
+    modelID: String
+) -> (request: LanguageModelRequest, name: String?) {
+    let choice = request.toolChoice ?? request.extraBody["toolChoice"]
+    let choiceType = choice?["type"]?.stringValue ?? choice?.stringValue
+    guard case let .json(schema?, _, description) = request.responseFormat,
+          request.tools.contains(where: { name, schema in
+              schema["type"]?.stringValue != "provider" && !(schema["id"]?.stringValue ?? name).hasPrefix("google.")
+          }),
+          modelID.range(of: #"(^|/)gemini-"#, options: [.regularExpression, .caseInsensitive]) != nil,
+          !googleModelCapabilities(for: modelID).usesGemini3Features || choiceType == "required" || choiceType == "tool" else {
+        return (request, nil)
+    }
+    var name = "json"
+    var suffix = 1
+    while request.tools[name] != nil {
+        name = "json_\(suffix)"
+        suffix += 1
+    }
+    var converted = request
+    var tool = schema.objectValue ?? [:]
+    tool["description"] = .string(description ?? "Respond with a JSON object.")
+    converted.tools[name] = .object(tool)
+    converted.responseFormat = nil
+    converted.extraBody.removeValue(forKey: "responseFormat")
+    if choiceType == "tool" {
+        converted.toolChoice = choice
+    } else if choiceType == "none" {
+        converted.toolChoice = .object(["type": "tool", "toolName": .string(name)])
+    } else {
+        converted.toolChoice = .object(["type": "required"])
+    }
+    return (converted, name)
 }
 
 extension GoogleGenerativeLanguageModel {
@@ -361,9 +403,16 @@ func googleGenerateContentToolResultParts(
         )
     }
 
+    let outputType = output["type"]?.stringValue
+    let isError = outputType == "error-text" || outputType == "error-json" || outputType == "execution-denied"
+    let errorValue = outputType == "execution-denied"
+        ? (output["reason"] ?? .string("Tool call execution denied."))
+        : (output["value"] ?? output)
     var functionResponse: [String: JSONValue] = [
         "name": .string(result.toolName),
-        "response": googleSerializeFunctionResponseContent(unwrappedOutput)
+        "response": isError
+            ? .object(["name": .string(result.toolName), "error": googleSerializeFunctionResponseContent(errorValue)])
+            : googleSerializeFunctionResponseContent(unwrappedOutput)
     ]
     if includeFunctionCallIDs {
         functionResponse["id"] = .string(result.toolCallID)

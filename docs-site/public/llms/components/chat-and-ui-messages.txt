@@ -9,9 +9,9 @@ Source URL: /components/chat-and-ui-messages/
 | Case | 10 |
 | Class | 1 |
 | Enumeration | 3 |
-| Function | 6 |
+| Function | 13 |
 | Initializer | 12 |
-| Instance Method | 19 |
+| Instance Method | 23 |
 | Instance Property | 77 |
 | Protocol | 1 |
 | Structure | 10 |
@@ -40,8 +40,15 @@ Source URL: /components/chat-and-ui-messages/
 | Function | `convertToModelMessages(_:)` | `func convertToModelMessages(_ messages: [AIUIMessage]) throws -> [AIMessage]` | [Sources/SwiftAISDK/AIUIMessageConversion.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/AIUIMessageConversion.swift) |
 | Function | `convertToModelMessages(_:ignoreIncompleteToolCalls:)` | `func convertToModelMessages(_ messages: [AIUIMessage], ignoreIncompleteToolCalls: Bool) throws -> [AIMessage]` | [Sources/SwiftAISDK/AIUIMessageConversion.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/AIUIMessageConversion.swift) |
 | Function | `convertToModelMessages(_:ignoreIncompleteToolCalls:convertDataPart:)` | `func convertToModelMessages(_ messages: [AIUIMessage], ignoreIncompleteToolCalls: Bool = false, convertDataPart: AIUIDataPartConverter?) throws -> [AIMessage]` | [Sources/SwiftAISDK/AIUIMessageConversion.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/AIUIMessageConversion.swift) |
+| Function | `convertToModelMessages(_:tools:ignoreIncompleteToolCalls:convertDataPart:)` | `func convertToModelMessages(_ messages: [AIUIMessage], tools: [String : AITool], ignoreIncompleteToolCalls: Bool = false, convertDataPart: AIUIDataPartConverter? = nil) async throws -> [AIMessage]` | [Sources/SwiftAISDK/AIUIMessageConversion.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/AIUIMessageConversion.swift) |
 | Function | `safeValidateUIMessages(_:)` | `func safeValidateUIMessages(_ messages: [AIUIMessage]) -> AIUIMessageValidationResult` | [Sources/SwiftAISDK/AIUIMessageValidation.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/AIUIMessageValidation.swift) |
+| Function | `safeValidateUIMessages(_:toolSchemas:)` | `func safeValidateUIMessages(_ messages: [AIUIMessage], toolSchemas: [String : AIUIMessageToolSchema]) -> AIUIMessageValidationResult` | [Sources/SwiftAISDK/AIUIMessageValidation.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/AIUIMessageValidation.swift) |
+| Function | `safeValidateUIMessages(_:toolSchemas:refineToolInput:)` | `func safeValidateUIMessages(_ messages: [AIUIMessage], toolSchemas: [String : AIUIMessageToolSchema], refineToolInput: [String : AIUIMessageToolInputRefiner]) async -> AIUIMessageValidationResult` | [Sources/SwiftAISDK/AIUIMessageValidation.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/AIUIMessageValidation.swift) |
 | Function | `validateUIMessages(_:)` | `@discardableResult func validateUIMessages(_ messages: [AIUIMessage]) throws -> [AIUIMessage]` | [Sources/SwiftAISDK/AIUIMessageValidation.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/AIUIMessageValidation.swift) |
+| Function | `validateUIMessages(_:toolSchemas:)` | `@discardableResult func validateUIMessages(_ messages: [AIUIMessage], toolSchemas: [String : AIUIMessageToolSchema]) throws -> [AIUIMessage]` | [Sources/SwiftAISDK/AIUIMessageValidation.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/AIUIMessageValidation.swift) |
+| Function | `validateUIMessages(_:toolSchemas:refineToolInput:)` | `@discardableResult func validateUIMessages(_ messages: [AIUIMessage], toolSchemas: [String : AIUIMessageToolSchema], refineToolInput: [String : AIUIMessageToolInputRefiner]) async throws -> [AIUIMessage]` | [Sources/SwiftAISDK/AIUIMessageValidation.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/AIUIMessageValidation.swift) |
+| Function | `validateUIMessagesForAgent(_:toolSchemas:)` | `@discardableResult func validateUIMessagesForAgent(_ messages: [AIUIMessage], toolSchemas: [String : AIUIMessageToolSchema] = [:]) throws -> [AIUIMessage]` | [Sources/SwiftAISDK/AIUIMessageValidation.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/AIUIMessageValidation.swift) |
+| Function | `validateUIMessagesForAgent(_:toolSchemas:refineToolInput:)` | `@discardableResult func validateUIMessagesForAgent(_ messages: [AIUIMessage], toolSchemas: [String : AIUIMessageToolSchema] = [:], refineToolInput: [String : AIUIMessageToolInputRefiner]) async throws -> [AIUIMessage]` | [Sources/SwiftAISDK/AIUIMessageValidation.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/AIUIMessageValidation.swift) |
 | Initializer | `init(chatID:abortSignal:headers:body:metadata:)` | `init(chatID: String, abortSignal: AIAbortSignal? = nil, headers: [String : String] = [:], body: [String : JSONValue] = [:], metadata: JSONValue? = nil)` | [Sources/SwiftAISDK/AIChatTransport.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/AIChatTransport.swift) |
 | Initializer | `init(chatID:transport:messages:generateMessageID:onError:onFinish:sendAutomaticallyWhen:)` | `@MainActor init(chatID: String = UUID().uuidString, transport: any AIChatTransport, messages: [AIUIMessage] = [], generateMessageID: @escaping @Sendable () -> String = { UUID().uuidString }, onError: (@MainActor @Sendable (Error) -> Void)? = nil, onFinish: (@MainActor @Sendable (AIChatSessionFinishEvent) -> Void)? = nil, sendAutomaticallyWhen: (@MainActor @Sendable ([AIUIMessage]) -> Bool)? = nil)` | [Sources/SwiftAISDK/AIChatSession.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/AIChatSession.swift) |
 | Initializer | `init(chatID:trigger:messageID:responseMessageID:messages:abortSignal:headers:body:metadata:)` | `init(chatID: String, trigger: AIChatTransportTrigger = .submitMessage, messageID: String? = nil, responseMessageID: String? = nil, messages: [AIUIMessage], abortSignal: AIAbortSignal? = nil, headers: [String : String] = [:], body: [String : JSONValue] = [:], metadata: JSONValue? = nil)` | [Sources/SwiftAISDK/AIChatTransport.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/AIChatTransport.swift) |
@@ -58,8 +65,11 @@ Source URL: /components/chat-and-ui-messages/
 | Instance Method | `addToolOutput(_:id:metadata:options:)` | `@MainActor func addToolOutput(_ result: AIToolResult, id: String? = nil, metadata: [String : JSONValue] = [:], options: AIChatSessionRequestOptions = AIChatSessionRequestOptions())` | [Sources/SwiftAISDK/AIChatSession.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/AIChatSession.swift) |
 | Instance Method | `addToolResult(_:id:metadata:options:)` | `@MainActor func addToolResult(_ result: AIToolResult, id: String? = nil, metadata: [String : JSONValue] = [:], options: AIChatSessionRequestOptions = AIChatSessionRequestOptions())` | [Sources/SwiftAISDK/AIChatSession.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/AIChatSession.swift) |
 | Instance Method | `clearError()` | `@MainActor func clearError()` | [Sources/SwiftAISDK/AIChatSession.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/AIChatSession.swift) |
+| Instance Method | `close()` | `func close() async` | [Sources/SwiftAISDK/AIChatTransport.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/AIChatTransport.swift) |
+| Instance Method | `close()` | `func close() async` | [Sources/SwiftAISDK/AIChatTransport.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/AIChatTransport.swift) |
 | Instance Method | `consume(_:)` | `@discardableResult mutating func consume(_ part: LanguageStreamPart) throws -> AIUIMessage` | [Sources/SwiftAISDK/AIUIMessageStreamReducer.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/AIUIMessageStreamReducer.swift) |
 | Instance Method | `consume(contentsOf:)` | `@discardableResult mutating func consume<S>(contentsOf parts: S) throws -> AIUIMessage where S : Sequence, S.Element == LanguageStreamPart` | [Sources/SwiftAISDK/AIUIMessageStreamReducer.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/AIUIMessageStreamReducer.swift) |
+| Instance Method | `dispose()` | `@MainActor func dispose() async` | [Sources/SwiftAISDK/AIChatSession.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/AIChatSession.swift) |
 | Instance Method | `languageModelRequest(messages:abortSignal:headers:)` | `func languageModelRequest(messages: [AIMessage], abortSignal: AIAbortSignal? = nil, headers additionalHeaders: [String : String] = [:]) -> LanguageModelRequest` | [Sources/SwiftAISDK/AIChatTransport.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/AIChatTransport.swift) |
 | Instance Method | `reconnectToStream(_:)` | `func reconnectToStream(_ request: AIChatReconnectRequest) async throws -> AsyncThrowingStream<AIUIMessage, Error>?` | [Sources/SwiftAISDK/AIChatTransport.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/AIChatTransport.swift) |
 | Instance Method | `reconnectToStream(_:)` | `func reconnectToStream(_ request: AIChatReconnectRequest) async throws -> AsyncThrowingStream<AIUIMessage, Error>?` | [Sources/SwiftAISDK/AIChatTransport.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/AIChatTransport.swift) |
@@ -73,6 +83,7 @@ Source URL: /components/chat-and-ui-messages/
 | Instance Method | `sendMessages(_:)` | `func sendMessages(_ request: AIChatTransportRequest) throws -> AsyncThrowingStream<AIUIMessage, Error>` | [Sources/SwiftAISDK/AIChatTransport.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/AIChatTransport.swift) |
 | Instance Method | `setMessages(_:)` | `@MainActor func setMessages(_ messages: [AIUIMessage])` | [Sources/SwiftAISDK/AIChatSession.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/AIChatSession.swift) |
 | Instance Method | `stop(reason:)` | `@MainActor func stop(reason: String? = "stopped")` | [Sources/SwiftAISDK/AIChatSession.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/AIChatSession.swift) |
+| Instance Method | `stopAndWait(reason:)` | `@MainActor func stopAndWait(reason: String? = "stopped") async` | [Sources/SwiftAISDK/AIChatSession.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/AIChatSession.swift) |
 | Instance Property | `abortSignal` | `var abortSignal: AIAbortSignal?` | [Sources/SwiftAISDK/AIChatTransport.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/AIChatTransport.swift) |
 | Instance Property | `abortSignal` | `var abortSignal: AIAbortSignal?` | [Sources/SwiftAISDK/AIChatTransport.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/AIChatTransport.swift) |
 | Instance Property | `body` | `var body: [String : JSONValue]` | [Sources/SwiftAISDK/AIChatSession.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/AIChatSession.swift) |
@@ -164,3 +175,23 @@ Source URL: /components/chat-and-ui-messages/
 | Type Alias | `AIUIDataPartConverter` | `typealias AIUIDataPartConverter = @Sendable (AIUIDataPart) throws -> AIContentPart?` | [Sources/SwiftAISDK/AIUIMessageConversion.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/AIUIMessageConversion.swift) |
 | Type Method | `snapshots(from:messageID:terminateOnError:)` | `static func snapshots(from stream: AsyncThrowingStream<LanguageStreamPart, Error>, messageID: String = UUID().uuidString, terminateOnError: Bool = false) -> AsyncThrowingStream<AIUIMessage, Error>` | [Sources/SwiftAISDK/AIUIMessageStreamReducer.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/AIUIMessageStreamReducer.swift) |
 | Type Method | `snapshots(from:messageID:terminateOnError:originalMessage:onEnd:)` | `static func snapshots(from stream: AsyncThrowingStream<LanguageStreamPart, Error>, messageID: String = UUID().uuidString, terminateOnError: Bool = false, originalMessage: AIUIMessage? = nil, onEnd: (@Sendable (AIUIMessageStreamEndEvent) async -> Void)? = nil) -> AsyncThrowingStream<AIUIMessage, Error>` | [Sources/SwiftAISDK/AIUIMessageStreamReducer.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/AIUIMessageStreamReducer.swift) |
+
+## Awaitable lifecycle and restored tools
+
+`await session.stopAndWait()` waits for active send/reconnect consumer tasks to settle;
+`await session.dispose()` also calls the transport's defaultable `close()`.
+Existing synchronous `stop()` remains available. Cancellation suppresses an
+automatic follow-up even when a restored or superseded stream settles later.
+Custom transports own the completion of asynchronous producers that ignore
+cancellation: the public stream contract has no producer-completion handle.
+
+Use `AIUIMessageToolSchema` with schema-aware `validateUIMessages` or
+`validateUIMessagesForAgent`. Async overloads accept `refineToolInput` callbacks
+and check the preserved pre-refinement approval input before refinement.
+DirectAIChatTransport bridges current tool refiners and output converters.
+
+Agent normalization records `unavailableStaticToolCallIDs` for removed static
+tools. Successful missing-tool outputs become an omission message; dynamic
+outputs, errors and tools restored with a current converter keep their intended
+model representation. Browser HTTP/WebSocket framing and explicit UI stream
+step boundaries remain separate deferred surfaces.

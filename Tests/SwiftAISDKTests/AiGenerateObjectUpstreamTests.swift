@@ -129,6 +129,7 @@ private func generateObjectContentSchema() -> JSONValue {
     }
 
     #expect(await recorder.events() == [
+        AIWarningLogEvent(warnings: [AIWarning(type: "deprecated", setting: "generateObject", message: "Use generateText with an output setting instead.")]),
         AIWarningLogEvent(warnings: expectedWarnings, providerID: "mock", modelID: "mock-language")
     ])
 }
@@ -151,6 +152,7 @@ private func generateObjectContentSchema() -> JSONValue {
     }
 
     #expect(await recorder.events() == [
+        AIWarningLogEvent(warnings: [AIWarning(type: "deprecated", setting: "generateObject", message: "Use generateText with an output setting instead.")]),
         AIWarningLogEvent(warnings: [], providerID: "mock", modelID: "mock-language")
     ])
 }

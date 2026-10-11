@@ -254,6 +254,14 @@ func openAICompatibleChatWarnings(for request: LanguageModelRequest, providerID:
     if isOpenAIBacked, request.topK != nil {
         warnings.append(AIWarning(type: "unsupported", feature: "topK"))
     }
+    if isOpenAIBacked, request.providerOptions["openai"]?["reasoningSummary"] != nil,
+       request.providerOptions["openai"]?["reasoningSummary"] != .null {
+        warnings.append(AIWarning(
+            type: "unsupported",
+            feature: "reasoningSummary",
+            message: "reasoningSummary is only supported by the Responses API, not the Chat Completions API"
+        ))
+    }
     warnings.append(contentsOf: openAICompatibleChatToolWarnings(for: request))
     if providerID.hasPrefix("xai.") {
         warnings.append(contentsOf: xaiChatWarnings(for: request))

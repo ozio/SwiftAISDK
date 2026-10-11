@@ -46,7 +46,7 @@ public final class AzureOpenAIProvider: AIProvider, @unchecked Sendable {
             }
             headers["api-key"] = headers["api-key"] ?? key
         }
-        headers = withUserAgentSuffix(headers, "ai-sdk-azure/4.0.90")
+        headers = withUserAgentSuffix(headers, "ai-sdk-azure/4.0.99")
         let baseURL = withoutTrailingSlash(basePrefix)
         let baseURLInfo = try azureOpenAIBaseURLInfo(settings.baseURL)
         let transport = tokenProvider.map { AzureOpenAITokenProviderTransport(base: settings.transport, tokenProvider: $0) } ?? settings.transport
@@ -71,7 +71,7 @@ public final class AzureOpenAIProvider: AIProvider, @unchecked Sendable {
             return url
         })
         self.config = config
-        audioConfig = AzureAudioConfig(resourceName: resolvedResourceName, settings: audioSettings, apiKey: settings.apiKey ?? environmentValue(["AZURE_API_KEY"]), headers: settings.headers, transport: transport, tokenProvider: tokenProvider)
+        audioConfig = AzureAudioConfig(resourceName: resolvedResourceName, settings: audioSettings, apiKey: settings.apiKey ?? environmentValue(["AZURE_API_KEY"]), headers: settings.headers, transport: transport, downloadTransport: settings.transport, tokenProvider: tokenProvider)
         provider = OpenAICompatibleProvider(providerID: providerID, supportedCapabilities: supportedCapabilities, config: config)
     }
 
@@ -91,7 +91,9 @@ public final class AzureOpenAIProvider: AIProvider, @unchecked Sendable {
     public func completion(_ modelID: String) throws -> any LanguageModel { try completionModel(modelID) }
     public func responses(_ modelID: String) throws -> any LanguageModel { try languageModel(modelID) }
     public func embeddingModel(_ modelID: String) throws -> any EmbeddingModel { try provider.embeddingModel(modelID) }
-    public func imageModel(_ modelID: String) throws -> any ImageModel { try provider.imageModel(modelID) }
+    public func imageModel(_ modelID: String) throws -> any ImageModel {
+        AzureImageModel(modelID: modelID, openAI: try provider.imageModel(modelID), config: audioConfig)
+    }
     public func transcriptionModel(_ modelID: String) throws -> any TranscriptionModel {
         AzureTranscriptionModel(modelID: modelID, openAI: try provider.transcriptionModel(modelID), config: audioConfig)
     }

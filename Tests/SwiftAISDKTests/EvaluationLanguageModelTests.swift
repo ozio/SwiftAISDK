@@ -26,7 +26,7 @@ struct EvaluationLanguageModelTests {
             Issue.record("Expected JSON response format")
             return
         }
-        #expect(name == "evaluation")
+        #expect(name == "decision")
         #expect(description == nil)
         #expect(schema?["type"] == "object")
         #expect(schema?["additionalProperties"] == false)
@@ -35,9 +35,12 @@ struct EvaluationLanguageModelTests {
         #expect(schema?["properties"]?["q1"]?["type"] == "number")
 
         let userMessage = try #require(request.messages.last)
-        let prompt = userMessage.combinedText
+        guard case let .text(prompt, _) = userMessage.content[0] else { Issue.record("Expected rubric text"); return }
         let promptJSON = try JSONDecoder().decode(JSONValue.self, from: Data(prompt.utf8))
-        #expect(promptJSON["state"] == ["text": "test", "events": [1, .null]])
+        #expect(promptJSON["state"] == nil)
+        #expect(userMessage.content[1] == .text("Shared state:"))
+        guard case let .text(state, _) = userMessage.content[2] else { Issue.record("Expected state text"); return }
+        #expect(try decodeJSONBody(Data(state.utf8)) == ["text": "test", "events": [1, .null]])
         #expect(promptJSON["questions"]?["q0"]?["id"] == "category")
         #expect(promptJSON["questions"]?["q0"]?["criteria"]?["c0"]?["label"] == "Needs Review")
         #expect(promptJSON["questions"]?["q0"]?["criteria"]?["c1"]?["label"] == "Needs review")

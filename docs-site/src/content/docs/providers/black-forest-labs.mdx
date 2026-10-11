@@ -16,9 +16,16 @@ description: "black-forest-labs provider capabilities and factories."
 - Image
 - Video
 
+## FLUX 3 image inputs
+
+`flux-3-image` supports up to ten reference images, 768sq/1k/1.5k/2k/4k resolution, grounding, the latest version and safety tolerance 0–4. Size can derive an aspect ratio; explicit aspect ratio wins. Seed, masks and unsupported legacy fields warn and are omitted. Polling recognizes pending/reasoning/generating states and terminates on failed, moderated or missing tasks.
+
+Official/signed external image downloads retain the versioned/custom user-agent while omitting provider authentication and request credentials. Same-origin custom proxies retain configured headers. Official polling remains authenticated. Image input capability discovery recognizes FLUX 3.
+
+
 ## Notes
 
-Black Forest Labs image and FLUX 3 video generation mirror upstream 2.0.54: `BFL_API_KEY`, `x-key` auth, custom base URL and headers, versioned user-agent suffix, `image`/`imageModel` and `video`/`videoModel` aliases, `black-forest-labs.image` and `black-forest-labs.video` provider IDs, `/v1/{model}` submit URLs, response-supplied polling with trusted `bfl.ai` sibling-host credential forwarding, signed result URLs, provider options and warnings, response/provider metadata, and structured errors. Video supports text-to-video, first/last/timed keyframes, continuation, draft generation/enhancement, and settled cost metadata. Unary generation remains source compatible; `AsyncVideoModel` adds serializable V4 start/status operations, stable idempotent start retries, and shared facade polling. BFL has no native webhook, so a supplied webhook warns and falls back to polling. Language and embedding families remain unsupported. The 2026-09-20 pass enforces wall-clock image polling deadlines that can abort a hung request. File/mask image capabilities are now exposed as async Bool? getters; unrecognized models remain unknown.
+Black Forest Labs image and FLUX 3 video generation mirror upstream 2.0.59: `BFL_API_KEY`, `x-key` auth, custom base URL and headers, versioned user-agent suffix, `image`/`imageModel` and `video`/`videoModel` aliases, `black-forest-labs.image` and `black-forest-labs.video` provider IDs, `/v1/{model}` submit URLs, response-supplied polling with trusted `bfl.ai` sibling-host credential forwarding, signed result URLs, provider options and warnings, response/provider metadata, and structured errors. Video supports text-to-video, first/last/timed keyframes, continuation, draft generation/enhancement, and settled cost metadata. Unary generation remains source compatible; `AsyncVideoModel` adds serializable V4 start/status operations, stable idempotent start retries, and shared facade polling. BFL has no native webhook, so a supplied webhook warns and falls back to polling. Language and embedding families remain unsupported. The 2026-09-20 pass enforces wall-clock image polling deadlines that can abort a hung request. File/mask image capabilities are now exposed as async Bool? getters; unrecognized models remain unknown. The 2026-10-11 pass: FLUX 3 Image supports reference images, grounded prompts, resolution/ratio/seed mapping, terminal failure parsing and credential-isolated result downloads.
 
 Factory argument requirements are defined by the public Swift factory signatures. Use [Public symbols](/reference/generated/public-symbols/) when you need the exact initializer or factory declaration.
 

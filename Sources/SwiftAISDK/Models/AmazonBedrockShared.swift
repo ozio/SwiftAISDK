@@ -348,11 +348,13 @@ func bedrockPrepareTools(
         }
         if let strict = schema["strict"], strict != .null {
             if !bedrockSupportsStrictToolSpec(modelID: modelID) {
-                warnings.append(AIWarning(
-                    type: "unsupported",
-                    feature: "strict",
-                    message: "Tool '\(name)' has strict: \(bedrockJSONString(strict) ?? "false"), but strict mode is not supported by this model on Amazon Bedrock. The strict property will be ignored."
-                ))
+                if strict.boolValue == true {
+                    warnings.append(AIWarning(
+                        type: "unsupported",
+                        feature: "strict",
+                        message: "Tool '\(name)' has strict: true, but strict mode is not supported by this model on Amazon Bedrock. The strict property will be ignored."
+                    ))
+                }
             } else if strict.boolValue == true, !bedrockStrictToolSchemaCompatible(schema) {
                 warnings.append(AIWarning(
                     type: "unsupported",
@@ -486,7 +488,8 @@ private let bedrockAnthropicModelsWithoutStrictToolSupport = [
     "claude-opus-4-8",
     "claude-opus-5",
     "claude-fable-5",
-    "claude-sonnet-5"
+    "claude-sonnet-5",
+    "claude-haiku-5-5"
 ]
 
 private let bedrockAnthropicModelsWithoutReliableNativeStructuredOutput =
@@ -692,7 +695,14 @@ func bedrockApplyTopLevelReasoning(
     warnings: inout [AIWarning]
 ) {
     guard isCustomReasoning(reasoning), let reasoning else { return }
-    let explicitReasoningConfig = providerOptions["reasoningConfig"]?.objectValue
+    let explicit = providerOptions["reasoningConfig"]?.objectValue
+    if explicit?["type"]?.stringValue == "disabled" {
+        var disabled = explicit ?? [:]
+        disabled.removeValue(forKey: "budgetTokens")
+        disabled.removeValue(forKey: "maxReasoningEffort")
+        providerOptions["reasoningConfig"] = .object(disabled)
+        return
+    }
     let isAnthropicModel = bedrockIsAnthropicModel(
         modelID: modelID,
         modelFamily: modelFamily,
@@ -701,57 +711,45 @@ func bedrockApplyTopLevelReasoning(
     let capabilities = anthropicModelCapabilities(modelID)
     let isOpenAIModel = bedrockOpenAIModelID(modelID) != nil
     let isNovaReasoningModel = modelID.contains("amazon.nova-2-lite-v1:0")
-    var reasoningConfig: [String: JSONValue] = [:]
+    let effortMap = [
+        "minimal": "low", "low": "low", "medium": "medium",
+        "high": "high", "xhigh": "max", "max": "max"
+    ]
+    var reasoningConfig = explicit ?? [:]
 
     if isAnthropicModel {
         if reasoning == "none" {
-            reasoningConfig = ["type": .string("disabled")]
+            reasoningConfig = ["type": "disabled"]
         } else if capabilities.supportsAdaptiveThinking {
-            reasoningConfig = ["type": .string("adaptive")]
-            if let effort = mapReasoningToProviderEffort(
-                reasoning: reasoning,
-                effortMap: [
-                    "minimal": "low",
-                    "low": "low",
-                    "medium": "medium",
-                    "high": "high",
-                    "xhigh": "max"
-                ],
-                warnings: &warnings
-            ) {
+            if reasoningConfig["type"] == nil { reasoningConfig["type"] = "adaptive" }
+            if reasoningConfig["maxReasoningEffort"] == nil,
+               let effort = mapReasoningToProviderEffort(reasoning: reasoning, effortMap: effortMap, warnings: &warnings) {
                 reasoningConfig["maxReasoningEffort"] = .string(effort)
             }
         } else {
-            let maximum = capabilities.isKnownModel
-                ? capabilities.maxOutputTokens
-                : (maxOutputTokens ?? 4_096)
-            let budget = mapReasoningToProviderBudget(
-                reasoning: reasoning,
-                maxOutputTokens: maximum,
-                maxReasoningBudget: maximum,
-                warnings: &warnings
-            )
-            reasoningConfig = ["type": .string("enabled")]
-            if let budget {
-                reasoningConfig["budgetTokens"] = .number(Double(budget))
+            if reasoningConfig["type"] == nil { reasoningConfig["type"] = "enabled" }
+            if reasoningConfig["budgetTokens"] == nil {
+                let maximum = capabilities.isKnownModel ? capabilities.maxOutputTokens : (maxOutputTokens ?? 4_096)
+                if let budget = mapReasoningToProviderBudget(
+                    reasoning: reasoning,
+                    maxOutputTokens: maximum,
+                    maxReasoningBudget: maximum,
+                    warnings: &warnings
+                ) {
+                    reasoningConfig["budgetTokens"] = .number(Double(budget))
+                }
             }
         }
-    } else if reasoning != "none",
-              isOpenAIModel || isNovaReasoningModel || explicitReasoningConfig != nil {
-        if isNovaReasoningModel {
-            reasoningConfig["type"] = .string("enabled")
-        }
-        if let effort = mapReasoningToProviderEffort(
-            reasoning: reasoning,
-            effortMap: [
-                "minimal": "low",
-                "low": "low",
-                "medium": "medium",
-                "high": "high",
-                "xhigh": "max"
-            ],
-            warnings: &warnings
-        ) {
+    } else if reasoning != "none", isOpenAIModel || isNovaReasoningModel || explicit != nil {
+        if isNovaReasoningModel, reasoningConfig["type"] == nil { reasoningConfig["type"] = "enabled" }
+        if reasoningConfig["maxReasoningEffort"] == nil,
+           let effort = mapReasoningToProviderEffort(
+               reasoning: reasoning,
+               effortMap: isNovaReasoningModel
+                   ? ["minimal": "low", "low": "low", "medium": "medium", "high": "high", "xhigh": "high", "max": "high"]
+                   : effortMap,
+               warnings: &warnings
+           ) {
             reasoningConfig["maxReasoningEffort"] = .string(effort)
         }
     } else if reasoning != "none" {
@@ -761,17 +759,7 @@ func bedrockApplyTopLevelReasoning(
             message: "Portable reasoning is not supported for this model and will be ignored. If the model supports a provider-specific reasoning configuration, use providerOptions.amazonBedrock.reasoningConfig."
         ))
     }
-
-    if let explicitReasoningConfig {
-        reasoningConfig.merge(explicitReasoningConfig) { _, explicit in explicit }
-    }
-    if reasoningConfig["type"]?.stringValue == "disabled" {
-        reasoningConfig.removeValue(forKey: "budgetTokens")
-        reasoningConfig.removeValue(forKey: "maxReasoningEffort")
-    }
-    if !reasoningConfig.isEmpty {
-        providerOptions["reasoningConfig"] = .object(reasoningConfig)
-    }
+    if !reasoningConfig.isEmpty { providerOptions["reasoningConfig"] = .object(reasoningConfig) }
 }
 
 func bedrockIsAnthropicModel(

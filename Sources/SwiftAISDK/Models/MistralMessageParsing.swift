@@ -133,6 +133,12 @@ func mistralContentPartJSON(_ part: AIContentPart) throws -> JSONValue {
         return .object(["type": .string("document_url"), "document_url": .string("data:\(mimeType);base64,\(data.base64EncodedString())")])
     case let .data(mimeType, _, _), let .file(mimeType, _, _, _):
         throw AIError.invalidArgument(argument: "files", message: "Mistral chat API only supports image and PDF file parts; got \(mimeType).")
+    case let .providerReference(mimeType, reference, _, _) where mimeType == "application/pdf":
+        let url = try resolveProviderReference(reference: reference, provider: "mistral")
+        guard URLComponents(string: url)?.scheme?.lowercased() == "https" else {
+            throw AIError.invalidArgument(argument: "files", message: "Mistral PDF references must use an HTTPS URL.")
+        }
+        return .object(["type": "document_url", "document_url": .string(url)])
     case .providerReference:
         throw AIError.invalidArgument(argument: "files", message: "Mistral chat API only supports image URL, inline image file, and PDF file parts.")
     case .reasoningFile, .custom, .toolCall, .toolResult, .toolApprovalRequest, .toolApprovalResponse:

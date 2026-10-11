@@ -93,6 +93,7 @@ function readProviderRows() {
       video,
       reranking,
       evaluation,
+      decision,
       files,
       skills,
     ] = splitMarkdownRow(line);
@@ -114,6 +115,7 @@ function readProviderRows() {
       video,
       reranking,
       evaluation,
+      decision,
       files,
       skills,
       notes: notes.get(providerID) ?? '',
@@ -142,6 +144,8 @@ function yamlString(value) {
 }
 
 function providerGuide(providerID) {
+  const guidePath = join(docsSiteRoot, `scripts/provider-guides/${providerSlug(providerID)}.md`);
+  if (existsSync(guidePath)) return '\n' + readFileSync(guidePath, 'utf8') + '\n';
   switch (providerID) {
     case 'topaz':
       return '\n' + readFileSync(join(docsSiteRoot, 'scripts/provider-guides/topaz.md'), 'utf8') + '\n';
@@ -214,6 +218,7 @@ function generateProviders() {
     ['video', 'Video'],
     ['reranking', 'Reranking'],
     ['evaluation', 'Evaluation'],
+    ['decision', 'Decision'],
     ['files', 'Files'],
     ['skills', 'Skills'],
   ];
@@ -228,13 +233,13 @@ function generateProviders() {
   const table = rows
     .map(
       (row) =>
-        `| [\`${row.providerID}\`](${providerSlug(row.providerID)}/) | \`${row.upstreamPackage}\` | ${row.factories} | ${marker(row.language)} | ${marker(row.completion)} | ${marker(row.embedding)} | ${marker(row.image)} | ${marker(row.transcription)} | ${marker(row.speech)} | ${marker(row.audioGeneration)} | ${marker(row.audioTransformation)} | ${marker(row.dubbing)} | ${marker(row.video)} | ${marker(row.reranking)} | ${marker(row.evaluation)} | ${marker(row.files)} | ${marker(row.skills)} |`,
+        `| [\`${row.providerID}\`](${providerSlug(row.providerID)}/) | \`${row.upstreamPackage}\` | ${row.factories} | ${marker(row.language)} | ${marker(row.completion)} | ${marker(row.embedding)} | ${marker(row.image)} | ${marker(row.transcription)} | ${marker(row.speech)} | ${marker(row.audioGeneration)} | ${marker(row.audioTransformation)} | ${marker(row.dubbing)} | ${marker(row.video)} | ${marker(row.reranking)} | ${marker(row.evaluation)} | ${marker(row.decision)} | ${marker(row.files)} | ${marker(row.skills)} |`,
     )
     .join('\n');
 
   writeGenerated(
     join(contentRoot, 'providers/index.mdx'),
-    `---\ntitle: Provider matrix\ndescription: Generated provider capability overview for SwiftAISDK.\n---\n\nThis page is generated from the package capability matrix. Update [ProviderCapabilityMatrix.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/ProviderCapabilityMatrix.swift) first when provider coverage changes.\n\n<div class="capability-grid">\n${capabilityList}\n</div>\n\n| Provider | Upstream package | Swift factories | Language | Completion | Embedding | Image | Transcription | Speech | Audio generation | Audio transformation | Dubbing | Video | Reranking | Evaluation | Files | Skills |\n| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n${table}\n`,
+    `---\ntitle: Provider matrix\ndescription: Generated provider capability overview for SwiftAISDK.\n---\n\nThis page is generated from the package capability matrix. Update [ProviderCapabilityMatrix.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/ProviderCapabilityMatrix.swift) first when provider coverage changes.\n\n<div class="capability-grid">\n${capabilityList}\n</div>\n\n| Provider | Upstream package | Swift factories | Language | Completion | Embedding | Image | Transcription | Speech | Audio generation | Audio transformation | Dubbing | Video | Reranking | Evaluation | Decision | Files | Skills |\n| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n${table}\n`,
   );
 
   for (const row of rows) {
@@ -251,6 +256,7 @@ function generateProviders() {
       ['Video', row.video],
       ['Reranking', row.reranking],
       ['Evaluation', row.evaluation],
+      ['Decision', row.decision],
       ['Files', row.files],
       ['Skills', row.skills],
     ].filter(([, supported]) => supported);
@@ -404,9 +410,11 @@ function generateComponents(symbols) {
         return `| ${symbol.kind} | \`${symbol.title.replaceAll('`', '')}\` | \`${declarationText.replaceAll('`', '')}\` | ${path} |`;
       })
       .join('\n');
+    const guidePath = join(docsSiteRoot, 'scripts/component-guides', `${slugify(component)}.md`);
+    const guide = existsSync(guidePath) ? `\n${readFileSync(guidePath, 'utf8')}` : '';
     writeGenerated(
       join(contentRoot, `components/${slugify(component)}.mdx`),
-      `---\ntitle: ${component}\ndescription: Public SwiftAISDK APIs for ${component.toLowerCase()}.\n---\n\n## Symbol counts\n\n| Symbol kind | Count |\n| --- | --- |\n${counts}\n\n## Public symbols\n\n| Kind | Symbol | Declaration | Source |\n| --- | --- | --- | --- |\n${symbolRows}\n`,
+      `---\ntitle: ${component}\ndescription: Public SwiftAISDK APIs for ${component.toLowerCase()}.\n---\n\n## Symbol counts\n\n| Symbol kind | Count |\n| --- | --- |\n${counts}\n\n## Public symbols\n\n| Kind | Symbol | Declaration | Source |\n| --- | --- | --- | --- |\n${symbolRows}\n${guide}`,
     );
   }
 }

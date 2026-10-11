@@ -678,25 +678,6 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
                 supportsWebSearchSourcesInclude: config.supportsWebSearchSourcesInclude
             )
         }
-        let stripsReasoningModelSampling = openAIResponsesStripsSamplingSettings(
-            modelID: modelID,
-            isReasoningModel: isEffectiveReasoningModel,
-            options: options
-        )
-        openAIResponsesRemoveUnsupportedGPT6Options(
-            modelID: modelID,
-            stripsReasoningModelSampling: stripsReasoningModelSampling,
-            options: &options,
-            warnings: &warnings
-        )
-        if stripsReasoningModelSampling {
-            if request.temperature != nil {
-                warnings.append(AIWarning(type: "unsupported", feature: "temperature", message: "temperature is not supported for reasoning models"))
-            }
-            if request.topP != nil {
-                warnings.append(AIWarning(type: "unsupported", feature: "topP", message: "topP is not supported for reasoning models"))
-            }
-        }
         let store = options["store"]?.boolValue ?? true
         let hasConversation = options["conversation"] != nil
         let hasPreviousResponseID = options["previous_response_id"] != nil
@@ -784,6 +765,7 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
                 computerToolNames: computerToolNames,
                 toolSearchToolName: toolSearchToolName,
                 providerID: providerID,
+                wrapToolErrors: isOpenAIBacked,
                 useDeveloperRoleForSystem: useDeveloperRoleForSystem,
                 explicitMessageItemType: config.explicitMessageItemType,
                 programmaticToolCallIDs: programmaticToolCallIDs,
@@ -830,6 +812,31 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
         }
         if compactionTrigger {
             input.append(.object(["type": .string("compaction_trigger")]))
+        }
+        var samplingOptions = options
+        for item in input where item["type"]?.stringValue == "configuration_update" {
+            var reasoning = samplingOptions["reasoning"]?.objectValue ?? [:]
+            reasoning["effort"] = item["reasoning"]?["effort"]
+            samplingOptions["reasoning"] = .object(reasoning)
+        }
+        let stripsReasoningModelSampling = openAIResponsesStripsSamplingSettings(
+            modelID: modelID,
+            isReasoningModel: isEffectiveReasoningModel,
+            options: samplingOptions
+        )
+        openAIResponsesRemoveUnsupportedGPT6Options(
+            modelID: modelID,
+            stripsReasoningModelSampling: stripsReasoningModelSampling,
+            options: &options,
+            warnings: &warnings
+        )
+        if stripsReasoningModelSampling {
+            if request.temperature != nil {
+                warnings.append(AIWarning(type: "unsupported", feature: "temperature", message: "temperature is not supported for reasoning models"))
+            }
+            if request.topP != nil {
+                warnings.append(AIWarning(type: "unsupported", feature: "topP", message: "topP is not supported for reasoning models"))
+            }
         }
         var body: [String: JSONValue] = [
             "model": .string(modelID),
@@ -925,7 +932,8 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
                    "low": "low",
                    "medium": "medium",
                    "high": "high",
-                   "xhigh": "xhigh"
+                   "xhigh": "xhigh",
+                   "max": "max"
                ],
                warnings: &warnings
            ) {

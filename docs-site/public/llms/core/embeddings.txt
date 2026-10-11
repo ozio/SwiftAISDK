@@ -55,7 +55,11 @@ parallel provider-option arrays remain aligned with their input values.
 
 ## Options
 
-- `dimensions` requests a provider-supported embedding size.
+- `dimensions` requests a provider-supported embedding size and must be positive.
+Validation runs before model work, even for an empty `embedMany` input.
+Alibaba, Bedrock, Cohere, Gateway, Google/Vertex, Mistral, compatible,
+Perplexity and Voyage adapters use it as the default; a documented
+provider-specific dimension overrides the shared value.
 - `providerOptions` carries provider-specific settings.
 - `extraBody` is a low-level escape hatch for unsupported provider fields.
 - `headers`, `abortSignal`, `retryPolicy`, and `telemetry` work the same way as other facade calls.

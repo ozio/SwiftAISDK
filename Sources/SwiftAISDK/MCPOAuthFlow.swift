@@ -39,7 +39,8 @@ public enum MCPOAuth {
                 }
                 await provider.invalidateCredentials(.all)
             case "invalid_grant":
-                await provider.invalidateCredentials(.tokens, context: await refreshAttempt.context)
+                guard let context = await refreshAttempt.context else { throw error }
+                await provider.invalidateCredentials(.tokens, context: context)
             default:
                 throw error
             }

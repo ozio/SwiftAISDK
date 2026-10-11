@@ -266,6 +266,8 @@ func alibabaReasoningBudget(_ reasoning: String) -> Int? {
         percentage = 0.6
     case "xhigh":
         percentage = 0.9
+    case "max":
+        percentage = 0.95
     default:
         if let explicit = Int(reasoning) {
             return min(max(explicit, 0), maxReasoningBudget)

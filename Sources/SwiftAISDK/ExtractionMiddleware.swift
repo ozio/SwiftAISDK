@@ -27,11 +27,32 @@ public func extractReasoningMiddleware(
     separator: String = "\n",
     startWithReasoning: Bool = false
 ) -> AILanguageModelMiddleware {
+    makeExtractReasoningMiddleware(opening: "<\(tagName)>", closing: "</\(tagName)>", separator: separator, startWithReasoning: startWithReasoning)
+}
+
+public struct AIReasoningDelimiters: Equatable, Sendable {
+    public var opening: String
+    public var closing: String
+    public init(opening: String, closing: String) { self.opening = opening; self.closing = closing }
+}
+
+public func extractReasoningMiddleware(
+    delimiters: AIReasoningDelimiters,
+    separator: String = "\n",
+    startWithReasoning: Bool = false
+) throws -> AILanguageModelMiddleware {
+    guard !delimiters.opening.isEmpty, !delimiters.closing.isEmpty else {
+        throw AIError.invalidArgument(argument: "tagName", message: "Reasoning delimiters must not be empty.")
+    }
+    return makeExtractReasoningMiddleware(opening: delimiters.opening, closing: delimiters.closing, separator: separator, startWithReasoning: startWithReasoning)
+}
+
+private func makeExtractReasoningMiddleware(opening: String, closing: String, separator: String, startWithReasoning: Bool) -> AILanguageModelMiddleware {
     AILanguageModelMiddleware(
         wrapGenerate: { context in
             var result = try await context.doGenerate()
-            let input = startWithReasoning ? "<\(tagName)>" + result.text : result.text
-            guard let extracted = extractTaggedSections(text: input, tagName: tagName, separator: separator) else {
+            let input = startWithReasoning ? opening + result.text : result.text
+            guard let extracted = extractDelimitedSections(text: input, opening: opening, closing: closing, separator: separator) else {
                 return result
             }
             result.text = extracted.text
@@ -41,7 +62,8 @@ public func extractReasoningMiddleware(
         wrapStream: { context in
             extractReasoningStream(
                 context.doStream(),
-                tagName: tagName,
+                opening: opening,
+                closing: closing,
                 separator: separator,
                 startWithReasoning: startWithReasoning
             )
@@ -207,7 +229,11 @@ func extractTaggedSections(
     tagName: String,
     separator: String
 ) -> (reasoning: String, text: String)? {
-    guard let segments = extractTaggedSegments(text: text, tagName: tagName) else {
+    extractDelimitedSections(text: text, opening: "<\(tagName)>", closing: "</\(tagName)>", separator: separator)
+}
+
+private func extractDelimitedSections(text: String, opening: String, closing: String, separator: String) -> (reasoning: String, text: String)? {
+    guard let segments = extractDelimitedSegments(text: text, openingTag: opening, closingTag: closing) else {
         return nil
     }
 
@@ -228,9 +254,7 @@ private enum ExtractedTaggedSegment {
     case text(String)
 }
 
-private func extractTaggedSegments(text: String, tagName: String) -> [ExtractedTaggedSegment]? {
-    let openingTag = "<\(tagName)>"
-    let closingTag = "</\(tagName)>"
+private func extractDelimitedSegments(text: String, openingTag: String, closingTag: String) -> [ExtractedTaggedSegment]? {
     let pattern = NSRegularExpression.escapedPattern(for: openingTag)
         + "(.*?)"
         + NSRegularExpression.escapedPattern(for: closingTag)
@@ -286,6 +310,16 @@ func extractReasoningStream(
     separator: String,
     startWithReasoning: Bool
 ) -> AsyncThrowingStream<LanguageStreamPart, Error> {
+    extractReasoningStream(stream, opening: "<\(tagName)>", closing: "</\(tagName)>", separator: separator, startWithReasoning: startWithReasoning)
+}
+
+func extractReasoningStream(
+    _ stream: AsyncThrowingStream<LanguageStreamPart, Error>,
+    opening: String,
+    closing: String,
+    separator: String,
+    startWithReasoning: Bool
+) -> AsyncThrowingStream<LanguageStreamPart, Error> {
     AsyncThrowingStream { continuation in
         let task = Task {
             do {
@@ -308,13 +342,13 @@ func extractReasoningStream(
                     let textBuffer = textBuffers[textID] ?? ""
                     let startMetadata = textStartMetadata[textID] ?? [:]
                     let endMetadata = textEndMetadata[textID] ?? [:]
-                    let input = startWithReasoning ? "<\(tagName)>" + textBuffer : textBuffer
+                    let input = startWithReasoning ? opening + textBuffer : textBuffer
                     var pendingDeltaMetadata = textDeltaMetadata[textID] ?? [:]
                     func takeDeltaMetadata() -> [String: JSONValue] {
                         defer { pendingDeltaMetadata = [:] }
                         return pendingDeltaMetadata
                     }
-                    if let segments = extractTaggedSegments(text: input, tagName: tagName) {
+                    if let segments = extractDelimitedSegments(text: input, openingTag: opening, closingTag: closing) {
                         var reasoningSegmentCount = 0
                         var textSegmentCount = 0
                         var emittedTextStart = false

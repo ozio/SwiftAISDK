@@ -50,6 +50,7 @@ public final class MCPHTTPTransport: MCPTransport, @unchecked Sendable {
     public let supportsProtocolVersionDiscovery = true
     public let supportsMCPToolParameterHeaders = true
     private let url: URL
+    var eventEndpoint: URL { url }
     private let headers: [String: String]
     private let transport: any AITransport
     private let streamingTransport: (any AIStreamingTransport)?

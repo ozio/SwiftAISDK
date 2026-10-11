@@ -354,6 +354,16 @@ public enum AuthorizationStyle: Equatable, Hashable, Sendable {
     case none
 }
 
+public struct AIBatchResultDownloadSettings: Equatable, Sendable {
+    /// Maximum UTF-8 bytes in a downloaded JSON Lines row, excluding LF.
+    /// The default limit is 64 MiB.
+    public var maxLineBytes: Int?
+
+    public init(maxLineBytes: Int? = nil) {
+        self.maxLineBytes = maxLineBytes
+    }
+}
+
 public struct ProviderSettings: Sendable {
     /// Opt in only when the compatible server accepts rich tool-result content.
     public var supportsMultiPartToolContent: Bool = false
@@ -374,6 +384,10 @@ public struct ProviderSettings: Sendable {
     /// messages instead of incomplete output items.
     public var strictResponseInput: Bool
     public var transformRequestBody: (@Sendable ([String: JSONValue]) -> [String: JSONValue])?
+    /// An additive warning-aware transform. It runs after the existing transform
+    /// and its warnings are exposed by generated and streamed chat responses.
+    public var transformRequestBodyWithWarnings: (@Sendable ([String: JSONValue], inout [AIWarning]) -> [String: JSONValue])? = nil
+    public var batchResultDownloads: AIBatchResultDownloadSettings? = nil
     public var name: String?
 
     public init(
@@ -501,6 +515,8 @@ struct ModelHTTPConfig: @unchecked Sendable {
     var maxEmbeddingsPerCall: Int?
     var strictResponseInput: Bool
     var transformRequestBody: (@Sendable ([String: JSONValue]) -> [String: JSONValue])?
+    var transformRequestBodyWithWarnings: (@Sendable ([String: JSONValue], inout [AIWarning]) -> [String: JSONValue])?
+    var batchResultMaxLineBytes: Int?
     var responsesRequestMode: ResponsesRequestMode
     var getResponseErrorMetadata: (@Sendable (JSONValue) -> OpenResponsesErrorMetadata)?
     var openResponsesCustomToolID: String?
@@ -529,6 +545,8 @@ struct ModelHTTPConfig: @unchecked Sendable {
         maxEmbeddingsPerCall: Int? = nil,
         strictResponseInput: Bool = false,
         transformRequestBody: (@Sendable ([String: JSONValue]) -> [String: JSONValue])? = nil,
+        transformRequestBodyWithWarnings: (@Sendable ([String: JSONValue], inout [AIWarning]) -> [String: JSONValue])? = nil,
+        batchResultMaxLineBytes: Int? = nil,
         responsesRequestMode: ResponsesRequestMode = .openAICompatible,
         getResponseErrorMetadata: (@Sendable (JSONValue) -> OpenResponsesErrorMetadata)? = nil,
         openResponsesCustomToolID: String? = nil,
@@ -557,6 +575,8 @@ struct ModelHTTPConfig: @unchecked Sendable {
         self.maxEmbeddingsPerCall = maxEmbeddingsPerCall
         self.strictResponseInput = strictResponseInput
         self.transformRequestBody = transformRequestBody
+        self.transformRequestBodyWithWarnings = transformRequestBodyWithWarnings
+        self.batchResultMaxLineBytes = batchResultMaxLineBytes
         self.responsesRequestMode = responsesRequestMode
         self.getResponseErrorMetadata = getResponseErrorMetadata
         self.openResponsesCustomToolID = openResponsesCustomToolID
@@ -655,6 +675,8 @@ struct ModelHTTPConfig: @unchecked Sendable {
             maxEmbeddingsPerCall: maxEmbeddingsPerCall,
             strictResponseInput: strictResponseInput,
             transformRequestBody: transformRequestBody,
+            transformRequestBodyWithWarnings: transformRequestBodyWithWarnings,
+            batchResultMaxLineBytes: batchResultMaxLineBytes,
             responsesRequestMode: responsesRequestMode,
             getResponseErrorMetadata: getResponseErrorMetadata,
             openResponsesCustomToolID: openResponsesCustomToolID,
@@ -686,6 +708,8 @@ struct ModelHTTPConfig: @unchecked Sendable {
             maxEmbeddingsPerCall: maxEmbeddingsPerCall,
             strictResponseInput: strictResponseInput,
             transformRequestBody: transformRequestBody,
+            transformRequestBodyWithWarnings: transformRequestBodyWithWarnings,
+            batchResultMaxLineBytes: batchResultMaxLineBytes,
             responsesRequestMode: responsesRequestMode,
             getResponseErrorMetadata: getResponseErrorMetadata,
             openResponsesCustomToolID: openResponsesCustomToolID,
@@ -717,6 +741,8 @@ struct ModelHTTPConfig: @unchecked Sendable {
             maxEmbeddingsPerCall: maxEmbeddingsPerCall,
             strictResponseInput: strictResponseInput,
             transformRequestBody: transformRequestBody,
+            transformRequestBodyWithWarnings: transformRequestBodyWithWarnings,
+            batchResultMaxLineBytes: batchResultMaxLineBytes,
             responsesRequestMode: responsesRequestMode,
             getResponseErrorMetadata: getResponseErrorMetadata,
             openResponsesCustomToolID: openResponsesCustomToolID,
@@ -748,6 +774,8 @@ struct ModelHTTPConfig: @unchecked Sendable {
             maxEmbeddingsPerCall: maxEmbeddingsPerCall,
             strictResponseInput: strictResponseInput,
             transformRequestBody: transformRequestBody,
+            transformRequestBodyWithWarnings: transformRequestBodyWithWarnings,
+            batchResultMaxLineBytes: batchResultMaxLineBytes,
             responsesRequestMode: responsesRequestMode,
             getResponseErrorMetadata: getResponseErrorMetadata,
             openResponsesCustomToolID: openResponsesCustomToolID,

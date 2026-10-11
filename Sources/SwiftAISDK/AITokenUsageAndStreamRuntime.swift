@@ -11,8 +11,16 @@ func sumTokenUsage(_ lhs: TokenUsage?, _ rhs: TokenUsage?) -> TokenUsage? {
         inputTokensCacheWrite: optionalSum(lhs?.inputTokensCacheWrite, rhs?.inputTokensCacheWrite),
         outputTextTokens: optionalSum(lhs?.outputTextTokens, rhs?.outputTextTokens),
         outputReasoningTokens: optionalSum(lhs?.outputReasoningTokens, rhs?.outputReasoningTokens),
-        rawValue: rhs?.rawValue ?? lhs?.rawValue
+        rawValue: isEmptyTokenUsage(lhs) ? rhs?.rawValue : isEmptyTokenUsage(rhs) ? lhs?.rawValue : nil
     )
+}
+
+private func isEmptyTokenUsage(_ usage: TokenUsage?) -> Bool {
+    guard let usage else { return true }
+    return usage.inputTokens == nil && usage.outputTokens == nil && usage.totalTokens == nil
+        && usage.inputTokensNoCache == nil && usage.inputTokensCacheRead == nil
+        && usage.inputTokensCacheWrite == nil && usage.outputTextTokens == nil
+        && usage.outputReasoningTokens == nil && usage.rawValue == nil
 }
 
 func optionalSum(_ lhs: Int?, _ rhs: Int?) -> Int? {

@@ -494,6 +494,7 @@ import Testing
     let result = AIToolResult(toolCallID: "call-1", toolName: "lookup", result: ["forecast": "sunny"])
     let transport = DirectAIChatTransport(
         model: model,
+        executableTools: [AITool(name: "lookup", parameters: ["type": "object"], execute: { _ in ["forecast": "sunny"] })],
         requestOptions: AIChatRequestOptions(
             temperature: 0.2,
             providerOptions: ["mock": ["trace": "enabled"]],

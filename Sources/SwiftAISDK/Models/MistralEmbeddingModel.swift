@@ -27,6 +27,9 @@ public final class MistralEmbeddingModel: EmbeddingModel, @unchecked Sendable {
             "encoding_format": .string("float")
         ]
         body.merge(mistralProviderOptions(from: request.extraBody)) { _, new in new }
+        if body["output_dimension"] == nil, let dimensions = request.dimensions {
+            body["output_dimension"] = .number(Double(dimensions))
+        }
         if let providerValue = request.providerOptions["mistral"] {
             if providerValue != .null {
                 guard let providerOptions = providerValue.objectValue else {

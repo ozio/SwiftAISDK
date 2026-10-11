@@ -1,0 +1,70 @@
+---
+title: Decision
+description: Ask typed Choice, Score, and Boolean questions about ordered text, JSON, and file evidence.
+---
+
+`AI.experimentalDecide` returns validated answers to a named question map.
+OpenAI uses `/decisions`, Gateway uses `/decision-model`, TypeSafe AI uses
+`/systemone`, and Anthropic/Google use `DecisionLanguageModel` with structured
+output. These providers expose `decisionModel(...)`; registries and custom
+providers route `AIDecisionModelReference` values.
+
+```swift
+import Foundation
+import SwiftAISDK
+
+let provider = try AIProviders.openAI()
+let result = try await AI.experimentalDecide(
+    model: try provider.decisionModel("gpt-6-luna"),
+    state: .parts([
+        .text("Review this support reply."),
+        .json(["reply": "Your replacement ships tomorrow."]),
+        .file(mediaType: "image/png", data: .url(URL(string: "https://example.com/package.png")!))
+    ]),
+    questions: [
+        "helpful": .boolean(instructions: "Does the reply address the request?"),
+        "tone": .choice(instructions: "Choose the tone.", criteria: ["Friendly": "Warm and helpful", "Neutral": "Matter of fact", "Rude": "Dismissive"]),
+        "quality": .score(instructions: "Rate the reply.", criteria: ["Poor", "Adequate", "Excellent"])
+    ]
+)
+print(result.answers)
+```
+
+The facade resolves file URLs and data URLs before provider calls and preserves
+part order, filenames, and file provider options. `.json([…])` is one JSON
+value; `.parts([])` is an empty evidence list. `Data`, base64 strings, URLs,
+and provider references are distinct `AIDecisionFileData` cases.
+
+Choice distributions must cover every option and sum to one. Scores are
+weighted means of the indexed criteria. Boolean answers represent P(true).
+Values must be finite and within their rubric bounds; missing/extra answers,
+malformed distributions, and unsupported question types fail validation.
+Provider-declared rounding relaxes sum/weighted-score precision checks; the
+chosen option must still have maximal probability under the published contract.
+
+If any question is refused, raw provider results can contain `.refusal`, while
+the facade throws `AIDecisionRefusalError` for the entire decision. No partial
+answer map is reported as successful, and a refusal does not retry provider I/O.
+
+## Media limits
+
+- OpenAI accepts inline PNG, JPEG, WebP, and GIF images, with optional image detail.
+- `DecisionLanguageModel` accepts image evidence alongside text/JSON.
+- Gateway forwards inline bytes/base64 after URL normalization by the facade.
+- TypeSafe AI accepts text/JSON only and rejects files before HTTP.
+- Native provider-file references are unsupported by these decision adapters.
+
+## Callbacks, telemetry, and compatibility
+
+Async `onStart`/`onEnd` callbacks receive typed state/questions/answers and the
+complete `runtimeContext`. Existing `Telemetry.Integration.record` records
+`ai.decide` and `ai.decide.doDecide`; input/output controls and selected
+runtime-context keys determine the recorded payload. Response metadata keeps
+the actual resolved model and provider response ID when supplied.
+
+`AI.experimentalEvaluate`, Evaluation protocols, result types, and old factory
+signatures remain callable. Their JSON-array state retains its original meaning;
+use the new `stateParts:` overload for ordered Evaluation evidence. New code
+should use Decision names. Custom mocks for experimental OpenAI/Gateway
+Evaluation should now serve `/decisions` and `/decision-model` envelopes;
+language-backed mocks should use the schema name `decision`.

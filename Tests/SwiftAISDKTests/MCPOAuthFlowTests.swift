@@ -320,7 +320,7 @@ import Testing
         #expect(error.message.contains("does not match expected https://resource.example.com/mcp/rpc"))
     }
 }
-@Test func mcpOAuthAuthInvalidGrantInvalidatesTokensAndRetries() async throws {
+@Test func mcpOAuthAuthCodeInvalidGrantPreservesCredentialsAndDoesNotRetry() async throws {
     let provider = TestOAuthClientProvider(
         clientInformation: try oauthClientInformation(),
         codeVerifier: "verifier123",
@@ -355,18 +355,21 @@ import Testing
         """)
     ])
 
-    let result = try await MCPOAuth.auth(
-        provider: provider,
-        serverURL: "https://resource.example.com/mcp/rpc",
-        authorizationCode: "code123",
-        callbackState: "state123",
-        transport: transport
-    )
-
-    #expect(result == .authorized)
-    #expect(await provider.invalidations() == [.tokens])
-    #expect(await provider.savedTokens()?.accessToken == "access-after-retry")
-    #expect(await transport.requests().count == 6)
+    do {
+        _ = try await MCPOAuth.auth(
+            provider: provider,
+            serverURL: "https://resource.example.com/mcp/rpc",
+            authorizationCode: "code123",
+            callbackState: "state123",
+            transport: transport
+        )
+        Issue.record("Expected invalid authorization code")
+    } catch let error as MCPOAuthServerError {
+        #expect(error.code == "invalid_grant")
+    }
+    #expect(await provider.invalidations().isEmpty)
+    #expect(await provider.savedTokens() == nil)
+    #expect(await transport.requests().count == 3)
 }
 @Test func mcpOAuthAuthUsesProviderCustomClientAuthentication() async throws {
     let information = try oauthAuthorizationServerInformation()

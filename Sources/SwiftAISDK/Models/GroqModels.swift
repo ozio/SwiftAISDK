@@ -35,19 +35,30 @@ public final class GroqLanguageModel: LanguageModel, @unchecked Sendable {
             throw AIError.invalidResponse(provider: providerID, message: "Response did not contain any choices.")
         }
 
-        let toolCalls = groqToolCalls(from: choice["message"]?["tool_calls"])
+        let allToolCalls = groqToolCalls(from: choice["message"]?["tool_calls"])
+        let toolCalls = allToolCalls.filter { $0.name != prepared.jsonResponseToolName }
         let reasoning = choice["message"]?["reasoning"]?.stringValue ?? ""
-        guard let text = choice["message"]?["content"]?.stringValue ?? (!toolCalls.isEmpty || !reasoning.isEmpty ? "" : nil) else {
+        guard let conversationalText = choice["message"]?["content"]?.stringValue ?? (!allToolCalls.isEmpty || !reasoning.isEmpty ? "" : nil) else {
             throw AIError.invalidResponse(provider: providerID, message: "No text content found in Groq response.")
+        }
+        let responseCalls = allToolCalls.filter { $0.name == prepared.jsonResponseToolName }
+        let text = prepared.jsonResponseToolName == nil ? conversationalText : responseCalls.map(\.arguments).joined()
+        let reason = groqFinishReason(choice["finish_reason"]?.stringValue)
+        var content: [AIResultContentPart] = []
+        if prepared.jsonResponseToolName != nil {
+            if !reasoning.isEmpty { content.append(.reasoning(reasoning)) }
+            content += allToolCalls.map { $0.name == prepared.jsonResponseToolName ? .text($0.arguments) : .toolCall($0) }
         }
         return TextGenerationResult(
             text: text,
+            content: content,
             reasoning: reasoning,
-            finishReason: groqFinishReason(choice["finish_reason"]?.stringValue),
+            finishReason: !responseCalls.isEmpty && toolCalls.isEmpty && reason == "tool-calls" ? "stop" : reason,
             usage: groqUsage(from: raw["usage"]),
             toolCalls: toolCalls,
             rawValue: raw,
             warnings: prepared.warnings,
+            requestMetadata: AIRequestMetadata(body: .object(prepared.body), headers: request.headers),
             responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
         )
     }
@@ -76,6 +87,7 @@ public final class GroqLanguageModel: LanguageModel, @unchecked Sendable {
                     var didEmitResponseMetadata = false
                     var activeReasoningID: String?
                     var activeTextID: String?
+                    var jsonConverter = GroqJSONResponseToolConverter(name: prepared.jsonResponseToolName)
                     for try await event in serverSentEvents(from: response.body) {
                         if event.data == "[DONE]" { break }
                         let raw = try decodeJSONBody(Data(event.data.utf8))
@@ -100,7 +112,12 @@ public final class GroqLanguageModel: LanguageModel, @unchecked Sendable {
                             }
                             continuation.yield(.reasoningDeltaPart(id: id, delta: reasoning))
                         }
-                        if let delta = raw["choices"]?[0]?["delta"]?["content"]?.stringValue, !delta.isEmpty {
+                        if prepared.jsonResponseToolName != nil, raw["choices"]?[0]?["delta"]?["content"]?.stringValue?.isEmpty == false,
+                           let reasoningID = activeReasoningID {
+                            continuation.yield(.reasoningEnd(id: reasoningID))
+                            activeReasoningID = nil
+                        }
+                        if prepared.jsonResponseToolName == nil, let delta = raw["choices"]?[0]?["delta"]?["content"]?.stringValue, !delta.isEmpty {
                             if let reasoningID = activeReasoningID {
                                 continuation.yield(.reasoningEnd(id: reasoningID))
                                 activeReasoningID = nil
@@ -120,7 +137,7 @@ public final class GroqLanguageModel: LanguageModel, @unchecked Sendable {
                             }
                             for toolCallDelta in toolCallDeltas {
                                 for part in toolCalls.apply(delta: toolCallDelta) {
-                                    continuation.yield(part)
+                                    for converted in jsonConverter.convert(part) { continuation.yield(converted) }
                                 }
                             }
                         }
@@ -135,10 +152,10 @@ public final class GroqLanguageModel: LanguageModel, @unchecked Sendable {
                         continuation.yield(.textEnd(id: textID))
                     }
                     for part in toolCalls.finishedParts() {
-                        continuation.yield(part)
+                        for converted in jsonConverter.convert(part) { continuation.yield(converted) }
                     }
                     continuation.yield(.finishMetadata(
-                        reason: finishReason,
+                        reason: jsonConverter.hasResponseTool && !jsonConverter.hasApplicationTool && finishReason == "tool-calls" ? "stop" : finishReason,
                         usage: latestUsage,
                         providerMetadata: [:]
                     ))
@@ -157,6 +174,44 @@ private typealias GroqStreamingToolCalls = OpenAIStyleStreamingToolCalls
 struct GroqPreparedCall {
     var body: [String: JSONValue]
     var warnings: [AIWarning]
+    var jsonResponseToolName: String? = nil
+}
+
+private struct GroqJSONResponseToolConverter {
+    var name: String?
+    var ids: Set<String> = []
+    var idsWithDeltas: Set<String> = []
+    var hasResponseTool = false
+    var hasApplicationTool = false
+
+    mutating func convert(_ part: LanguageStreamPart) -> [LanguageStreamPart] {
+        guard let name else { return [part] }
+        switch part {
+        case let .toolInputStart(id, toolName, _, _, _, metadata) where toolName == name:
+            ids.insert(id)
+            return [.textStart(id: id, providerMetadata: metadata)]
+        case let .toolInputDelta(id, delta, metadata) where ids.contains(id):
+            if !delta.isEmpty { idsWithDeltas.insert(id) }
+            return [.textDeltaPart(id: id, delta: delta, providerMetadata: metadata)]
+        case let .toolInputEnd(id, _) where ids.contains(id):
+            return []
+        case let .toolCallDelta(id, toolName, _, _) where toolName == name || id.map(ids.contains) == true:
+            return []
+        case let .toolCall(call):
+            if call.name == name {
+                hasResponseTool = true
+                var parts: [LanguageStreamPart] = []
+                if !ids.contains(call.id) { parts.append(.textStart(id: call.id, providerMetadata: call.providerMetadata)) }
+                if !idsWithDeltas.contains(call.id) { parts.append(.textDeltaPart(id: call.id, delta: call.arguments, providerMetadata: call.providerMetadata)) }
+                parts.append(.textEnd(id: call.id, providerMetadata: call.providerMetadata))
+                return parts
+            }
+            if !call.providerExecuted { hasApplicationTool = true }
+            return [part]
+        default:
+            return [part]
+        }
+    }
 }
 
 struct GroqPreparedTools {

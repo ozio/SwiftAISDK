@@ -11,8 +11,8 @@ public final class BlackForestLabsImageModel: ImageModel, @unchecked Sendable {
     }
 
     public func generateImage(_ request: ImageGenerationRequest) async throws -> ImageGenerationResult {
-        let options = try blackForestLabsProviderOptions(from: request)
-        let warnings = blackForestLabsWarnings(for: request)
+        let options = try blackForestLabsProviderOptions(from: request, modelID: modelID)
+        var warnings = blackForestLabsWarnings(for: request)
         var body: [String: JSONValue] = ["prompt": .string(request.prompt)]
         if let aspectRatio = request.aspectRatio {
             body["aspect_ratio"] = .string(aspectRatio)
@@ -30,6 +30,29 @@ public final class BlackForestLabsImageModel: ImageModel, @unchecked Sendable {
             body["seed"] = .number(Double(seed))
         }
         body.merge(try blackForestLabsImageInputs(files: request.files, mask: request.mask, modelID: modelID)) { _, new in new }
+        if modelID == "flux-3-image" {
+            if request.mask != nil { throw AIError.invalidArgument(argument: "mask", message: "FLUX 3 image masks are unsupported.") }
+            if request.size != nil {
+                warnings = [AIWarning(type: "unsupported", feature: "size", message: request.aspectRatio == nil
+                    ? "Deriving aspect_ratio from size. FLUX 3 uses the resolution provider option to select output resolution."
+                    : "FLUX 3 ignores size when aspectRatio is provided. Use the resolution provider option to select output resolution.")]
+            }
+            let original = body["aspect_ratio"]?.stringValue
+            var aspectRatio = original == "7:3" ? "21:9" : original == "3:7" ? "9:21" : original
+            if let ratio = aspectRatio, !["21:9", "2:1", "16:9", "3:2", "7:5", "4:3", "5:4", "1:1", "4:5", "3:4", "5:7", "2:3", "9:16", "1:2", "9:21"].contains(ratio) {
+                warnings.append(AIWarning(type: "unsupported", feature: "aspectRatio", message: "FLUX 3 does not support aspect ratio \(original ?? ratio). Using the endpoint's default auto aspect ratio."))
+                aspectRatio = nil
+            }
+            if request.seed != nil { warnings.append(AIWarning(type: "unsupported", feature: "seed", message: "FLUX 3 does not support seed.")) }
+            for key in options.keys.sorted() where !["grounding", "pollIntervalMillis", "pollTimeoutMillis", "resolution", "safetyTolerance", "version"].contains(key) && options[key] != .null {
+                warnings.append(AIWarning(type: "unsupported", feature: "blackForestLabs.\(key)", message: "FLUX 3 does not support \(key)."))
+            }
+            body = ["prompt": .string(request.prompt)]
+            body["aspect_ratio"] = aspectRatio.map(JSONValue.string)
+            if !request.files.isEmpty { body["images"] = .array(request.files.map { .string(blackForestLabsImageString($0)) }) }
+            for key in ["resolution", "grounding", "version"] { body[key] = options[key] }
+            body["safety_tolerance"] = options["safetyTolerance"]
+        }
         let submitResponse = try await config.transport.send(config.request(path: "/\(modelID)", modelID: modelID, body: .object(body), headers: request.headers, abortSignal: request.abortSignal))
         guard (200..<300).contains(submitResponse.statusCode) else {
             throw blackForestLabsHTTPStatusError(provider: providerID, response: submitResponse)
@@ -50,8 +73,9 @@ public final class BlackForestLabsImageModel: ImageModel, @unchecked Sendable {
         guard let url = raw["result"]?["sample"]?.stringValue else {
             throw AIError.invalidResponse(provider: providerID, message: "Black Forest Labs poll response is Ready but missing result.sample")
         }
-        let imageHeaders = blackForestLabsTrustedHeaders(for: url, baseURL: config.baseURL, headers: config.headers.mergingHeaders(request.headers))
-        let image = try await downloadURL(url, transport: config.transport, headers: imageHeaders, abortSignal: request.abortSignal)
+        let imageHeaders = blackForestLabsDownloadHeaders(for: url, baseURL: config.baseURL, headers: config.headers.mergingHeaders(request.headers))
+        let image = try await downloadURL(url, transport: config.transport, headers: imageHeaders, abortSignal: request.abortSignal, trustedOrigin: config.baseURL,
+                                          credentialedOrigin: blackForestLabsUsesCustomDownloadHeaders(for: url, baseURL: config.baseURL) ? config.baseURL : nil)
         guard (200..<300).contains(image.statusCode) else {
             throw apiCallError(provider: providerID, response: image)
         }
@@ -101,6 +125,12 @@ public final class BlackForestLabsImageModel: ImageModel, @unchecked Sendable {
                 if status == "Error" || status == "Failed" {
                     throw AIError.invalidResponse(provider: providerID, message: "Black Forest Labs generation failed.")
                 }
+                if ["Request Moderated", "Content Moderated", "Task not found"].contains(status) {
+                    throw AIError.invalidResponse(provider: providerID, message: "Black Forest Labs generation failed: \(status).")
+                }
+                guard ["Generating", "Pending", "Reasoning"].contains(status) else {
+                    throw AIError.invalidResponse(provider: providerID, message: "Invalid Black Forest Labs generation status: \(status).")
+                }
                 try await sleepWithAbortSignal(nanoseconds: intervalNanoseconds, abortSignal: pollingAbortSignal)
             }
         } catch {
@@ -120,13 +150,23 @@ public final class BlackForestLabsImageModel: ImageModel, @unchecked Sendable {
             url,
             transport: config.transport,
             headers: headers,
-            abortSignal: abortSignal
+            abortSignal: abortSignal,
+            trustedOrigin: config.baseURL
         )
     }
 }
 
 func blackForestLabsTrustedHeaders(for url: String, baseURL: String, headers: [String: String]) -> [String: String] {
     blackForestLabsIsTrustedURL(url, baseURL: baseURL) ? headers : [:]
+}
+
+private func blackForestLabsDownloadHeaders(for url: String, baseURL: String, headers: [String: String]) -> [String: String] {
+    if blackForestLabsUsesCustomDownloadHeaders(for: url, baseURL: baseURL) { return headers }
+    return headers.filter { $0.key.lowercased() == "user-agent" }
+}
+private func blackForestLabsUsesCustomDownloadHeaders(for url: String, baseURL: String) -> Bool {
+    let hostname = URLComponents(string: baseURL)?.host?.lowercased() ?? ""
+    return isSameOriginURL(url, baseURL) && hostname != "bfl.ai" && !hostname.hasSuffix(".bfl.ai")
 }
 
 private func blackForestLabsIsTrustedURL(_ url: String, baseURL: String) -> Bool {
@@ -163,20 +203,27 @@ private func defaultPort(for scheme: String) -> Int? {
     }
 }
 
-private func blackForestLabsProviderOptions(from request: ImageGenerationRequest) throws -> [String: JSONValue] {
+private func blackForestLabsProviderOptions(from request: ImageGenerationRequest, modelID: String) throws -> [String: JSONValue] {
     var output = blackForestLabsProviderOptions(from: request.extraBody)
     if let providerValue = request.providerOptions["blackForestLabs"] {
         guard providerValue != .null else { return output }
         guard let providerOptions = providerValue.objectValue else {
             throw AIError.invalidArgument(argument: "providerOptions.blackForestLabs", message: "Black Forest Labs provider options must be an object.")
         }
-        output.merge(try blackForestLabsValidatedProviderOptions(from: providerOptions)) { _, providerValue in providerValue }
+        output.merge(try blackForestLabsValidatedProviderOptions(from: providerOptions, modelID: modelID)) { _, providerValue in providerValue }
     }
     return output
 }
 
 func blackForestLabsHTTPStatusError(provider: String, response: AIHTTPResponse) -> AIError {
     let body = blackForestLabsErrorMessage(from: response.body) ?? response.bodyText
+    let raw = try? response.jsonValue()
+    if let status = raw?["status"]?.stringValue ?? raw?["state"]?.stringValue,
+       ["Content Moderated", "Error", "Failed", "Request Moderated", "Task not found"].contains(status) {
+        var error = AIAPICallError(provider: provider, statusCode: response.statusCode, responseHeaders: response.headers, responseBody: response.bodyText, isRetryable: false)
+        error.message = body
+        return .apiCall(error)
+    }
     guard !response.headers.isEmpty else {
         return .apiCall(provider: provider, statusCode: response.statusCode, body: body)
     }
@@ -194,7 +241,7 @@ private func blackForestLabsErrorMessage(from data: Data) -> String? {
             return text
         }
     }
-    return json["message"]?.stringValue ?? "Unknown Black Forest Labs error"
+    return json["message"]?.stringValue ?? (json["status"]?.stringValue ?? json["state"]?.stringValue).map { "Black Forest Labs generation failed: \($0)." } ?? "Unknown Black Forest Labs error"
 }
 
 private func blackForestLabsProviderOptions(from extraBody: [String: JSONValue]) -> [String: JSONValue] {
@@ -226,7 +273,7 @@ private func blackForestLabsOptions(from extraBody: [String: JSONValue]) -> [Str
     return output
 }
 
-private func blackForestLabsValidatedProviderOptions(from options: [String: JSONValue]) throws -> [String: JSONValue] {
+private func blackForestLabsValidatedProviderOptions(from options: [String: JSONValue], modelID: String) throws -> [String: JSONValue] {
     var output: [String: JSONValue] = [:]
     for (key, value) in options where blackForestLabsSupportedProviderOptionKeys.contains(key) {
         switch key {
@@ -258,14 +305,19 @@ private func blackForestLabsValidatedProviderOptions(from options: [String: JSON
             guard let format = value.stringValue, ["jpeg", "png"].contains(format) else {
                 throw AIError.invalidArgument(argument: "providerOptions.blackForestLabs.outputFormat", message: "Black Forest Labs outputFormat must be one of jpeg, png.")
             }
-        case "promptUpsampling", "raw":
+        case "promptUpsampling", "raw", "grounding":
             guard value.boolValue != nil else {
                 throw AIError.invalidArgument(argument: "providerOptions.blackForestLabs.\(key)", message: "Black Forest Labs \(key) must be a boolean.")
             }
         case "safetyTolerance":
-            guard let number = value.doubleValue, blackForestLabsIsInteger(number), number >= 0, number <= 6 else {
-                throw AIError.invalidArgument(argument: "providerOptions.blackForestLabs.safetyTolerance", message: "Black Forest Labs safetyTolerance must be an integer between 0 and 6.")
+            let maximum = modelID == "flux-3-image" ? 4 : 6
+            guard let number = value.doubleValue, blackForestLabsIsInteger(number), number >= 0, number <= Double(maximum) else {
+                throw AIError.invalidArgument(argument: "providerOptions.blackForestLabs.safetyTolerance", message: "Black Forest Labs safetyTolerance must be an integer between 0 and \(maximum).")
             }
+        case "resolution":
+            guard let string = value.stringValue, ["768sq", "1k", "1.5k", "2k", "4k"].contains(string) else { throw AIError.invalidArgument(argument: "providerOptions.blackForestLabs.resolution", message: "Black Forest Labs resolution must be 768sq, 1k, 1.5k, 2k, or 4k.") }
+        case "version":
+            guard value == "latest" else { throw AIError.invalidArgument(argument: "providerOptions.blackForestLabs.version", message: "Black Forest Labs version must be latest.") }
         default:
             break
         }
@@ -275,6 +327,7 @@ private func blackForestLabsValidatedProviderOptions(from options: [String: JSON
 }
 
 private let blackForestLabsSupportedProviderOptionKeys: Set<String> = [
+    "resolution", "grounding", "version",
     "imagePrompt",
     "imagePromptStrength",
     "inputImage",

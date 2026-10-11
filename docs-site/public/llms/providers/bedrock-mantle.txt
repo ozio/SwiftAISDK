@@ -16,7 +16,7 @@ Source URL: /providers/bedrock-mantle/
 
 ## Notes
 
-Bedrock Mantle mirrors upstream 5.0.105 chat and responses surfaces with Bedrock Mantle hostnames, SigV4 or bearer auth, OpenAI-compatible request builders, versioned user-agent suffix, and provider metadata. JavaScript module-format exports are not applicable in Swift. The 2026-09-27 pass aligns model-family routing and current Responses behavior.
+Bedrock Mantle mirrors upstream 5.0.113 chat and responses surfaces with Bedrock Mantle hostnames, SigV4 or bearer auth, OpenAI-compatible request builders, versioned user-agent suffix, and provider metadata. JavaScript module-format exports are not applicable in Swift. The 2026-09-27 pass aligns model-family routing and current Responses behavior.
 
 Factory argument requirements are defined by the public Swift factory signatures. Use [Public symbols](/reference/generated/public-symbols/) when you need the exact initializer or factory declaration.
 

@@ -660,6 +660,7 @@ extension GatewayLanguageModel: BatchLanguageModel {
         _ options: AIBatchOperationOptions
     ) async throws -> AsyncThrowingStream<AIBatchItemResult<TextGenerationResult>, Error> {
         try options.abortSignal?.throwIfAborted()
+        let maxLineBytes = try aiBatchResultLineLimit(config.batchResultMaxLineBytes)
         let request = try config.request(
             path: "/batch/results",
             modelID: modelID,
@@ -683,6 +684,9 @@ extension GatewayLanguageModel: BatchLanguageModel {
                         response.body,
                         providerID: providerID,
                         abortSignal: options.abortSignal,
+                        url: request.url.absoluteString,
+                        maxLineBytes: maxLineBytes,
+                        cancelBody: response.cancelBody,
                         continuation: continuation
                     )
                     continuation.finish()
@@ -804,6 +808,7 @@ public final class GatewayBatchProvider: AIBatchProvider, @unchecked Sendable {
         _ options: AIBatchOperationOptions
     ) async throws -> AsyncThrowingStream<AIBatchV4ItemResult, Error> {
         try options.abortSignal?.throwIfAborted()
+        let maxLineBytes = try aiBatchResultLineLimit(config.batchResultMaxLineBytes)
         let request = try config.request(
             path: "/batch/results",
             modelID: "batch",
@@ -823,19 +828,15 @@ public final class GatewayBatchProvider: AIBatchProvider, @unchecked Sendable {
         return AsyncThrowingStream { continuation in
             let task = Task {
                 do {
-                    var buffer = Data()
-                    for try await chunk in response.body {
-                        buffer.append(chunk)
-                        while let newline = buffer.firstIndex(of: 0x0A) {
-                            let line = Data(buffer[..<newline])
-                            buffer.removeSubrange(...newline)
-                            if let item = try gatewayBatchResultItem(from: line, providerID: providerID) {
-                                continuation.yield(.text(item))
-                            }
+                    try await aiForEachBatchResultLine(response.body,
+                        url: request.url.absoluteString,
+                        maxLineBytes: maxLineBytes,
+                        abortSignal: options.abortSignal,
+                        cancelBody: response.cancelBody
+                    ) { line in
+                        if let item = try gatewayBatchResultItem(from: line, providerID: providerID) {
+                            continuation.yield(.text(item))
                         }
-                    }
-                    if let item = try gatewayBatchResultItem(from: buffer, providerID: providerID) {
-                        continuation.yield(.text(item))
                     }
                     continuation.finish()
                 } catch {
@@ -982,23 +983,15 @@ private func yieldGatewayBatchResultLines(
     _ body: AsyncThrowingStream<Data, Error>,
     providerID: String,
     abortSignal: AIAbortSignal?,
+    url: String,
+    maxLineBytes: Int,
+    cancelBody: @Sendable () -> Void,
     continuation: AsyncThrowingStream<AIBatchItemResult<TextGenerationResult>, Error>.Continuation
 ) async throws {
-    var buffer = Data()
-    for try await chunk in body {
-        try Task.checkCancellation()
-        try abortSignal?.throwIfAborted()
-        buffer.append(chunk)
-        while let newline = buffer.firstIndex(of: 0x0A) {
-            let line = Data(buffer[..<newline])
-            buffer.removeSubrange(...newline)
-            if let item = try gatewayBatchResultItem(from: line, providerID: providerID) {
-                continuation.yield(item)
-            }
+    try await aiForEachBatchResultLine(body, url: url, maxLineBytes: maxLineBytes, abortSignal: abortSignal, cancelBody: cancelBody) { line in
+        if let item = try gatewayBatchResultItem(from: line, providerID: providerID) {
+            continuation.yield(item)
         }
-    }
-    if let item = try gatewayBatchResultItem(from: buffer, providerID: providerID) {
-        continuation.yield(item)
     }
 }
 

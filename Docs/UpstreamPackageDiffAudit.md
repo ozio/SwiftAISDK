@@ -1,6 +1,6 @@
 # Upstream Package Diff Audit
 
-Snapshot date: 2026-10-04
+Snapshot date: 2026-10-11
 
 This audit records the published npm tarball comparison used by the weekly
 SwiftAISDK upstream check. Every changed tracked package was packed at both the
@@ -20,6 +20,153 @@ Status meanings:
 - `out-of-scope`: the changed package is a framework/product surface that this
   provider-facing Swift package does not expose.
 - `current`: the tracked package has no published version drift.
+
+
+## 2026-10-11 Weekly Audit
+
+The pass starts on clean `main` at published `2.2.0` (`efaf15fdca5a475496e99e71d182b432484ce874`), synchronized with origin and with no inherited ahead commits. Fresh registry reads cover all **53 tracked packages: 51 version drifts and two current rows**. Each drift is compared separately against its prior reference, including declarations, exports/configuration, request builders, response/errors/streams, options, headers/user-agent, telemetry metadata and upstream fixture patterns.
+
+**140 published archives** are independently verified against npm SHA-512 integrity: 51 old/latest pairs plus 38 untracked scoped packages. Packages without shipped src are reconstructed from published source-map sourcesContent; generated JS and declarations remain the cross-check. Fixture inventory uses `vercel/ai@ba05943b69ad070558bb5bc912da99ec66d7d263`, compared with previous `15f1a4d0531ac641a4a4d9cc602c0536c1906834`. Published tarballs are the behavior authority; newer monorepo tests do not silently advance the package baseline.
+
+| Package | Previous reference | Published latest | Decision and behavior | Focused evidence |
+| --- | --- | --- | --- | --- |
+| `@ai-sdk/alibaba` | `2.0.60` | `2.0.65` | **ported** — Common max reasoning uses 95% of the provider’s fixed 16,384-token budget. Shared embedding dimensions supply the default; provider dimension overrides it. | `WeeklyRemainingProviders20261011, AlibabaProviderTests`; full `swift test` |
+| `@ai-sdk/amazon-bedrock` | `5.0.105` | `5.0.113` | **ported** — Haiku 5.5 capabilities, disabled/adaptive thinking, structured-output fallback, explicit reasoning budget and max effort; common embedding dimensions. SigV4 excludes non-ASCII signed header values while retaining outgoing headers. | `WeeklyMajorProviders20261011, AmazonBedrockTests`; full `swift test` |
+| `@ai-sdk/anthropic` | `4.0.71` | `4.0.78` | **ported** — Haiku 5.5 thinking/sampling/effort/strict-output gates, message_start metadata, bounded UTF-8 batch result lines and early cancellation. Native Decision/Evaluation adapters inherit the reviewed Messages behavior. | `WeeklyMajorProviders20261011, DecisionProviderTests`; full `swift test` |
+| `@ai-sdk/anthropic-aws` | `2.0.63` | `2.0.71` | **ported** — Shared Haiku 5.5 Messages behavior and Unicode header signing. Package-local runtime source is unchanged beyond dependencies/identity; the inherited signing delta is tested. | `WeeklyMajorProviders20261011, AnthropicBedrockUpstream202609Tests`; full `swift test` |
+| `@ai-sdk/assemblyai` | `3.0.53` | `3.0.58` | **identity-only** — Published runtime source and declarations are identical after version literals are excluded; synchronize versioned user-agent and reviewed baseline. Existing request/error/stream tests retained. | `AssemblyAIProviderTests`; full `swift test` |
+| `@ai-sdk/azure` | `4.0.90` | `4.0.99` | **ported** — Native MAI Image generation/editing, reference images, result groups, Entra/API-key auth and typed/raw failures; inherits current OpenAI behavior. | `WeeklyAzure20261011, WeeklyAzureAudio20261004`; full `swift test` |
+| `@ai-sdk/baseten` | `2.1.40` | `2.1.45` | **identity-only** — Published runtime source and declarations are identical after version literals are excluded; synchronize versioned user-agent and reviewed baseline. Existing request/error/stream tests retained. | `BasetenProviderTests`; full `swift test` |
+| `@ai-sdk/black-forest-labs` | `2.0.54` | `2.0.59` | **ported** — FLUX 3 Image inputs, resolution/ratio/seed/grounding, terminal states and result-download auth/user-agent separation. | `WeeklyBFLXAI20261011, BlackForestLabsProviderTests`; full `swift test` |
+| `@ai-sdk/bytedance` | `2.0.56` | `2.0.61` | **identity-only** — Published runtime source and declarations are identical after version literals are excluded; synchronize versioned user-agent and reviewed baseline. Existing request/error/stream tests retained. | `MediaStatusRedirectUpstreamTests`; full `swift test` |
+| `@ai-sdk/cartesia` | `3.0.48` | `3.0.53` | **covered** — Published audio/media Blob Uint8Array<ArrayBuffer> casts are TypeScript-only; Swift Data already preserves the bytes and multipart/download semantics. Synchronize identity without artificial runtime changes. | `Cartesia*Tests`; full `swift test` |
+| `@ai-sdk/cerebras` | `3.0.62` | `3.0.67` | **identity-only** — Published runtime source and declarations are identical after version literals are excluded; synchronize versioned user-agent and reviewed baseline. Existing request/error/stream tests retained. | `CerebrasProviderTests`; full `swift test` |
+| `@ai-sdk/cohere` | `4.0.54` | `4.0.59` | **ported** — Select float/int8/uint8/binary/ubinary embeddings, 768/2048 dimensions, common-dimension fallback and cached chat usage. Packed bytes remain numeric vectors. | `WeeklyProviders20261011, CohereProviderOptionSchemaTests`; full `swift test` |
+| `@ai-sdk/deepgram` | `3.1.24` | `3.1.29` | **identity-only** — Published runtime source and declarations are identical after version literals are excluded; synchronize versioned user-agent and reviewed baseline. Existing request/error/stream tests retained. | `DeepgramProviderTests`; full `swift test` |
+| `@ai-sdk/deepinfra` | `3.0.62` | `3.0.67` | **identity-only** — Published runtime source and declarations are identical after version literals are excluded; synchronize versioned user-agent and reviewed baseline. Existing request/error/stream tests retained. | `DeepInfraProviderTests`; full `swift test` |
+| `@ai-sdk/deepseek` | `3.0.58` | `3.0.63` | **ported** — Common xhigh/max effort maps to max. Native Data already covers the published file-upload ArrayBuffer cast. | `WeeklyRemainingProviders20261011, DeepSeekVisionAndFilesUpstreamParityTests`; full `swift test` |
+| `@ai-sdk/elevenlabs` | `3.0.54` | `3.0.59` | **ported** — Preserve Scribe words/speaker/confidence in provider metadata. Native default diarize=true and explicit false already match the published duplicate-field correction. | `WeeklyRemainingProviders20261011, ElevenLabsProviderTests`; full `swift test` |
+| `@ai-sdk/fal` | `3.0.54` | `3.0.59` | **identity-only** — Published runtime source and declarations are identical after version literals are excluded; synchronize versioned user-agent and reviewed baseline. Existing request/error/stream tests retained. | `FalProviderTests`; full `swift test` |
+| `@ai-sdk/fish-audio` | `3.0.31` | `3.0.36` | **covered** — Published audio/media Blob Uint8Array<ArrayBuffer> casts are TypeScript-only; Swift Data already preserves the bytes and multipart/download semantics. Synchronize identity without artificial runtime changes. | `FishAudio*Tests`; full `swift test` |
+| `@ai-sdk/fireworks` | `3.0.65` | `3.0.70` | **ported** — Shared common max reasoning maps to high; request/response/stream behavior otherwise unchanged. | `WeeklyMajorProviders20261011, FireworksProviderTests`; full `swift test` |
+| `@ai-sdk/gateway` | `4.0.103` | `4.0.110` | **ported** — Decision V4 /decision-model with ordered inline file state, refusal/rounding/fallback attribution; embedding dimensions, missing xAI diarization warning, and bounded language/provider-batch JSONL downloads. | `DecisionProviderTests, WeeklyRemainingProviders20261011, GatewayEvaluationTests`; full `swift test` |
+| `@ai-sdk/gmicloud` | `3.0.33` | `3.0.38` | **identity-only** — Published runtime source and declarations are identical after version literals are excluded; synchronize versioned user-agent and reviewed baseline. Existing request/error/stream tests retained. | `GMICloudProviderTests`; full `swift test` |
+| `@ai-sdk/gladia` | `3.0.53` | `3.0.58` | **covered** — Published audio/media Blob Uint8Array<ArrayBuffer> casts are TypeScript-only; Swift Data already preserves the bytes and multipart/download semantics. Synchronize identity without artificial runtime changes. | `GladiaProviderTests`; full `swift test` |
+| `@ai-sdk/google` | `4.0.87` | `4.0.93` | **ported** — JSON with application tools: collision-safe response tool, incremental nested JSON conversion and real-tool/signature preservation; native Gemini model routing, common dimensions and Decision adapter. | `WeeklyGoogle20261011, DecisionProviderTests`; full `swift test` |
+| `@ai-sdk/google-vertex` | `5.0.101` | `5.0.109` | **ported** — Inherits JSON-with-tools parsing and dimensions. Nano Banana generateContent preserves binary/GCS image inputs, IMAGE modality, typed aspect ratio and provider imageConfig, rejects masks/multiple images, and retains usage/metadata. Transcription/realtime remain declared native design gaps; unpublished later Gemini capability work is excluded. | `WeeklyGoogle20261011, GoogleVertexTests`; full `swift test` |
+| `@ai-sdk/groq` | `4.0.54` | `4.0.59` | **ported** — JSON schema plus application tools uses synthetic response-tool conversion without synthetic tool leakage. Common max maps to high; transcription cast is Data-covered. | `WeeklyProviders20261011, GroqProviderTests`; full `swift test` |
+| `@ai-sdk/huggingface` | `2.0.62` | `2.0.67` | **identity-only** — Published runtime source and declarations are identical after version literals are excluded; synchronize versioned user-agent and reviewed baseline. Existing request/error/stream tests retained. | `HuggingFaceProviderTests`; full `swift test` |
+| `@ai-sdk/hume` | `3.0.53` | `3.0.58` | **identity-only** — Published runtime source and declarations are identical after version literals are excluded; synchronize versioned user-agent and reviewed baseline. Existing request/error/stream tests retained. | `HumeProviderTests`; full `swift test` |
+| `@ai-sdk/klingai` | `4.0.55` | `4.0.60` | **identity-only** — Published runtime source and declarations are identical after version literals are excluded; synchronize versioned user-agent and reviewed baseline. Existing request/error/stream tests retained. | `MediaStatusRedirectUpstreamTests`; full `swift test` |
+| `@ai-sdk/lmnt` | `3.0.36` | `3.0.36` | **current** — Fresh registry read matches the audited baseline; no source/version change. | `LMNTProviderTests`; full `swift test` |
+| `@ai-sdk/luma` | `3.0.54` | `3.0.59` | **identity-only** — Published runtime source and declarations are identical after version literals are excluded; synchronize versioned user-agent and reviewed baseline. Existing request/error/stream tests retained. | `LumaProviderTests`; full `swift test` |
+| `@ai-sdk/mcp` | `2.0.66` | `2.0.73` | **ported** — Typed experimental Events catalog, subscriptions, direct/managed adapters, atomic store patches, refresh/unsubscribe, Standard Webhooks HMAC verification and durable cursor callbacks. OAuth invalid_grant only invalidates/retries the failed refresh context. Native origin parsing already handles double-slash paths. Deprecated browser EventSource EOF fix is deferred. | `WeeklyMCPEvents20261011, WeeklyMCPCore20261011, MCPOAuthFlowTests`; full `swift test` |
+| `@ai-sdk/minimax` | `3.0.48` | `3.0.55` | **identity-only** — Published runtime source and declarations are identical after version literals are excluded; synchronize versioned user-agent and reviewed baseline. Existing request/error/stream tests retained. | `MediaStatusRedirectUpstreamTests`; full `swift test` |
+| `@ai-sdk/mistral` | `4.0.56` | `4.0.62` | **ported** — Stateless Conversations generation/SSE, replayable builtin executions, deduplicated sources and strict incomplete-stream failures; webSearch/webSearchPremium, Large 4 reasoning and common embedding dimensions. | `WeeklyMistral20261011, PerplexityMistralUpstreamTests`; full `swift test` |
+| `@ai-sdk/moonshotai` | `3.0.62` | `3.0.67` | **ported** — Shared common max effort maps to high; provider source otherwise changes dependencies/identity. | `WeeklyMajorProviders20261011, MoonshotAIProviderTests`; full `swift test` |
+| `@ai-sdk/open-responses` | `2.0.58` | `2.0.63` | **ported; deferred shared codecs** — Common max maps to xhigh. Native core JSON/usage behavior is preserved; provider extension registration/stream/replay codecs need a dedicated public design. | `WeeklyMajorProviders20261011, ResponsesEndpointTests`; full `swift test` |
+| `@ai-sdk/openai` | `4.0.83` | `4.0.91` | **ported** — Native /decisions, file-image evidence/refusals, GPT-6-sol/luna reasoning gates, failed web-search results, stored assistant IDs, typed OpenAI error codes and bounded batch JSONL. File ArrayBuffer cast is Data-covered. | `DecisionProviderTests, WeeklyOpenAI20261011, WeeklyMajorProviders20261011`; full `swift test` |
+| `@ai-sdk/openai-compatible` | `3.0.62` | `3.0.67` | **ported** — Warning-aware transforms through settings and the standard factory; retain the old transform and initializer signatures. Shared embeddings accept dimensions with provider precedence. Unpublished tool_content/file follow-ups excluded. | `WeeklyOpenAI20261011, OpenAICompatibleTests`; full `swift test` |
+| `@ai-sdk/perplexity` | `5.0.5` | `5.0.10` | **ported** — Common max maps to xhigh, unsupported effort warns/omits; embeddings accept common dimensions with provider overrides. | `WeeklyRemainingProviders20261011, PerplexityMistralUpstreamTests`; full `swift test` |
+| `@ai-sdk/prodia` | `2.0.54` | `2.0.59` | **covered** — Published audio/media Blob Uint8Array<ArrayBuffer> casts are TypeScript-only; Swift Data already preserves the bytes and multipart/download semantics. Synchronize identity without artificial runtime changes. | `ProdiaProviderTests`; full `swift test` |
+| `@ai-sdk/quiverai` | `2.0.54` | `2.0.59` | **identity-only** — Published runtime source and declarations are identical after version literals are excluded; synchronize versioned user-agent and reviewed baseline. Existing request/error/stream tests retained. | `QuiverAIProviderTests`; full `swift test` |
+| `@ai-sdk/replicate` | `3.0.54` | `3.0.59` | **identity-only** — Published runtime source and declarations are identical after version literals are excluded; synchronize versioned user-agent and reviewed baseline. Existing request/error/stream tests retained. | `ReplicateProviderTests`; full `swift test` |
+| `@ai-sdk/revai` | `3.0.53` | `3.0.58` | **covered** — Published audio/media Blob Uint8Array<ArrayBuffer> casts are TypeScript-only; Swift Data already preserves the bytes and multipart/download semantics. Synchronize identity without artificial runtime changes. | `RevAIProviderTests`; full `swift test` |
+| `@ai-sdk/togetherai` | `3.0.63` | `3.0.68` | **identity-only** — Published runtime source and declarations are identical after version literals are excluded; synchronize versioned user-agent and reviewed baseline. Existing request/error/stream tests retained. | `TogetherAIProviderTests`; full `swift test` |
+| `@ai-sdk/topaz` | `3.0.0` | `3.0.5` | **identity-only** — Published runtime source and declarations are identical after version literals are excluded; synchronize versioned user-agent and reviewed baseline. Existing request/error/stream tests retained. | `TopazProviderTests`; full `swift test` |
+| `@ai-sdk/typesafe-ai` | `3.0.12` | `3.0.17` | **ported** — Decision V4 text/JSON state and strict Choice/Score/Boolean limits, rounding/confidence/errors; retain legacy Evaluation factories and reject unsupported files. | `DecisionProviderTests, TypesafeAIProviderTests`; full `swift test` |
+| `@ai-sdk/vercel` | `3.0.30` | `3.0.30` | **current** — Fresh registry read matches the audited baseline; no source/version change. | `ProviderRegistryVercelTests`; full `swift test` |
+| `@ai-sdk/voyage` | `2.0.53` | `2.0.58` | **ported** — Common embedding dimensions default output_dimension; provider override wins. | `WeeklyRemainingProviders20261011, VoyageProviderOptionSchemaTests`; full `swift test` |
+| `@ai-sdk/xai` | `5.0.14` | `5.0.20` | **ported** — Native streaming STT lifecycle, multichannel/interim/final reconstruction and producer cleanup; model/Opus/VAD options, speaker metadata, Imagine Image 2.0 inputs/1.5k/auto quality, 20 X-search handles and max effort. Files cast is Data-covered. | `WeeklyBFLXAI20261011, XAIProviderTests`; full `swift test` |
+| `@ai-sdk/zai` | `3.0.24` | `3.0.29` | **identity-only** — Published runtime source and declarations are identical after version literals are excluded; synchronize versioned user-agent and reviewed baseline. Existing request/error/stream tests retained. | `ZAIProviderTests`; full `swift test` |
+| `ai` | `7.0.127` | `7.0.137` | **ported; deferred browser surfaces** — Decision facade/validation/refusals/telemetry with legacy Evaluation adapters; embedding preflight/dimensions; natural-ending stream deadlines and abort reasons; raw usage sum; prompt metadata; queue idle; literal reasoning delimiters; default agent 20-step warning; stable deprecations; native UI stop/dispose and schema/refiner-aware unavailable-tool history. HTTP/Node/WebSocket chat wire protocols, step boundaries and workflow tracing stay outside current native adapters. | `Decision/Evaluation, WeeklyCore20261011, WeeklyUI20261011, WeeklyRemainingProviders20261011`; full `swift test` |
+| `@ai-sdk/provider` | `4.0.21` | `4.0.26` | **ported** — Decision V4 ordered text/JSON/file state and refusal contract; shared embedding dimensions. Native Data/URL/protocols represent file and workflow interface types. | `DecisionCoreTests, DecisionValidationTests, WeeklyCore20261011`; full `swift test` |
+| `@ai-sdk/provider-utils` | `5.0.53` | `5.0.58` | **ported** — Decision language adapter, synthetic JSON response-tool stream conversion, max reasoning maps and empty-ID tool correlation. Published choice schema uses internal qN/cN labels; unreleased exact-label changes excluded. Response-handler ArrayBuffer casts are Data-covered. | `DecisionProviderTests, WeeklyCore20261011, WeeklyGoogle20261011, WeeklyProviders20261011`; full `swift test` |
+| `@ai-sdk/react` | `4.0.130` | `4.0.140` | **out-of-scope** — Published runtime source and declarations are identical; dependency/version-only update in a React package with no native Swift target. Portable UI behavior is covered under ai. | `Source/declarations reviewed; full Swift suite for native UI`; full `swift test` |
+
+### Published-source decisions and compatibility
+
+- **Decision V4:** additive `AI.experimentalDecide`, typed ordered text/JSON/file state, questions/answers, refusals, model references and provider/registry routing. OpenAI uses native `/decisions`, Gateway `/decision-model`, TypeSafe `/systemone`; Anthropic/Google use a language adapter. Core resolves URL evidence and media types before adapter execution. TypeSafe accepts text/JSON; generic language adapters accept image evidence; OpenAI accepts PNG/JPEG/WebP/GIF. Raw provider refusal answers remain inspectable, while the facade throws `AIDecisionRefusalError`. Existing Evaluation APIs retain JSON-array meaning and callable signatures; ordered legacy evidence uses additive `stateParts:`. Published strict choice maxima and two-decimal rounding are tested.
+- **Experimental endpoint migration:** existing Evaluation callers remain source compatible, but custom OpenAI/Gateway endpoint emulators must update `/decisions` or `/decision-model` envelopes; language-backed structured schemas are named `decision`. The old OpenAI Responses mock is no longer the evaluation backend. TypeSafe/Gateway identities on legacy factory entry points are retained.
+- **MCP Events:** catalog/capability validation, direct durable subscriptions and managed adapters, identity-preserving refresh, safe callback URLs, pending-state recovery, rotation-aware Standard Webhooks HMAC, 256 KiB request bodies, challenge-before-activation, ordered durable callbacks before cursor commits and explicit null cursor clearing. Stores implement atomic patches; webhook delivery does not invoke tools/agents and does not implement application deduplication. `invalid_grant` retries only after a failed refresh and preserves the captured generation for compare-and-delete.
+- **Core:** positive dimensions are validated before embedding I/O, including empty batches; terminal model parts stop chunk/first-part timers before slow postprocessing; aborts retain reason/name; raw usage survives a single nonempty operand; empty tool messages merge metadata; serial queues expose idle completion even after failed/nested jobs; reasoning delimiters are literal strings. Default agents stop at 20 continuing steps with a warning; natural endings and custom stop conditions do not warn. Object helpers emit stable deprecations; unified Output calls suppress their internal helper warning, and console deprecations deduplicate while custom loggers receive each warning.
+- **Native UI:** additive awaitable stop/dispose and transport close; schema/refiner-aware validation retains pre-refinement approval input. Missing static tool history records provenance and omits only successful unavailable outputs; dynamic/error outputs remain model-visible and restored current tools apply their converter. Replay and superseded reconnects respect cancellation. Browser transport disposal, WebSocket chat framing and async JS predicate races do not imply a native browser adapter.
+- **Media/provider parsing:** JSON-with-tools uses the published synthetic tool pipeline and preserves application calls; native batch readers enforce UTF-8 byte bounds before buffering and cancel on termination. The default per-line limit is 64 MiB, configurable through `ProviderSettings.batchResultDownloads`; invalid limits fail before network I/O. New string model IDs do not require restrictive Swift enum churn. Streaming/provider errors remain typed and terminal.
+
+Unpublished changes excluded from this baseline include later Anthropic citations/tool-choice, Google capability gates, OpenAI annotations, openai-compatible tool_content/file corrections and Decision exact-choice-label changes. Bedrock omitted-versus-empty stop-sequence warnings, DNS connection-address pinning, Google/Vertex transcription/realtime/translation, UI step boundaries, Open Responses extension codecs, browser WebSocket/HTTP/Node adapters, and JavaScript workflow/tracing-channel serialization remain explicit shared gaps. Deprecated EventSource transport EOF/abort changes have no native legacy-SSE adapter; current Streamable HTTP cancellation is covered separately.
+
+### Exact registry-prefix discovery
+
+Fresh `npm search --json` is cross-checked with `https://replicate.npmjs.com/_all_docs` exact `@ai-sdk/` prefix bounds and per-name registry metadata (latest/time/repository/exports/dist). The prefix contains **90 scoped names**, SHA-256 of sorted newline-joined names `492ce836577dac24d2e4ab1c783f3f5c82d8210896e164ce9cd5d44aa5338d87`; there are 52 tracked scoped names plus `ai`, and 38 untracked scoped names. The prior snapshot had 88 names. Search results with missing descriptions are explicitly classified, preventing empty-description providers from disappearing.
+
+**New provider: `@ai-sdk/heygen@3.0.0`, announced and deliberately unimplemented.** Its published `heygen-video-1` async adapter uses `HEYGEN_API_KEY` / `x-api-key`, `/v3/models/videos` start/status, text/image/reference video modes, URL/asset/base64 inputs, resolution/ratio/duration/seed controls, validated reference limits, persisted operations, output downloads, usage and errors. Next recommended vertical: a native `AsyncVideoModel` start/status/polling adapter, safe upload/download/auth handling, request and terminal-state fixtures, factory/capability row, public guide and release. No automatic HeyGen implementation is included.
+
+`@ai-sdk/tools@0.0.0` is a new seed package with no provider surface. `@ai-sdk/spacexai@0.0.0` remains an empty reservation. Full untracked classification follows; every latest package was downloaded and its exports/source reviewed.
+
+| Untracked package | Latest | Classification / decision |
+| --- | --- | --- |
+| `@ai-sdk/angular` | `3.0.137` | ui package; framework/schema/product runtime outside native provider coverage |
+| `@ai-sdk/code-mode` | `1.0.94` | tooling package; framework/schema/product runtime outside native provider coverage |
+| `@ai-sdk/codemod` | `4.0.3` | tooling package; framework/schema/product runtime outside native provider coverage |
+| `@ai-sdk/devtools` | `1.0.40` | tooling package; framework/schema/product runtime outside native provider coverage |
+| `@ai-sdk/durable-agent` | `0.0.1` | Product/workflow/policy/tooling surface; no model-provider contract |
+| `@ai-sdk/harness` | `1.0.148` | JavaScript harness/sandbox runtime adapter; outside provider-model port |
+| `@ai-sdk/harness-acp` | `1.0.87` | JavaScript harness/sandbox runtime adapter; outside provider-model port |
+| `@ai-sdk/harness-claude-code` | `1.0.152` | JavaScript harness/sandbox runtime adapter; outside provider-model port |
+| `@ai-sdk/harness-cline` | `1.0.75` | JavaScript harness/sandbox runtime adapter; outside provider-model port |
+| `@ai-sdk/harness-codex` | `1.0.150` | JavaScript harness/sandbox runtime adapter; outside provider-model port |
+| `@ai-sdk/harness-cursor` | `1.0.62` | JavaScript harness/sandbox runtime adapter; outside provider-model port |
+| `@ai-sdk/harness-deepagents` | `1.0.148` | JavaScript harness/sandbox runtime adapter; outside provider-model port |
+| `@ai-sdk/harness-fx` | `1.0.62` | JavaScript harness/sandbox runtime adapter; outside provider-model port |
+| `@ai-sdk/harness-github-copilot` | `1.0.44` | JavaScript harness/sandbox runtime adapter; outside provider-model port |
+| `@ai-sdk/harness-grok-build` | `1.0.86` | JavaScript harness/sandbox runtime adapter; outside provider-model port |
+| `@ai-sdk/harness-opencode` | `1.0.150` | JavaScript harness/sandbox runtime adapter; outside provider-model port |
+| `@ai-sdk/harness-pi` | `1.0.150` | JavaScript harness/sandbox runtime adapter; outside provider-model port |
+| `@ai-sdk/heygen` | `3.0.0` | Announced provider; native async video port proposed above, not implemented |
+| `@ai-sdk/langchain` | `3.0.137` | adapter package; framework/schema/product runtime outside native provider coverage |
+| `@ai-sdk/llamaindex` | `3.0.137` | adapter package; framework/schema/product runtime outside native provider coverage |
+| `@ai-sdk/otel` | `1.0.137` | JavaScript OpenTelemetry integration; existing native Telemetry is retained |
+| `@ai-sdk/policy-opa` | `1.0.137` | Product/workflow/policy/tooling surface; no model-provider contract |
+| `@ai-sdk/rsc` | `3.0.137` | ui package; framework/schema/product runtime outside native provider coverage |
+| `@ai-sdk/sandbox-just-bash` | `1.0.148` | JavaScript harness/sandbox runtime adapter; outside provider-model port |
+| `@ai-sdk/sandbox-vercel` | `1.0.148` | JavaScript harness/sandbox runtime adapter; outside provider-model port |
+| `@ai-sdk/solid` | `1.2.13` | ui package; framework/schema/product runtime outside native provider coverage |
+| `@ai-sdk/spacexai` | `0.0.0` | Empty/seed reservation; no model-provider implementation |
+| `@ai-sdk/specification` | `0.0.0` | Empty/seed reservation; no model-provider implementation |
+| `@ai-sdk/svelte` | `5.0.137` | ui package; framework/schema/product runtime outside native provider coverage |
+| `@ai-sdk/swarm` | `0.1.39` | Product/workflow/policy/tooling surface; no model-provider contract |
+| `@ai-sdk/test-server` | `2.0.4` | Product/workflow/policy/tooling surface; no model-provider contract |
+| `@ai-sdk/tools` | `0.0.0` | Empty/seed reservation; no model-provider implementation |
+| `@ai-sdk/tui` | `1.0.138` | Product/workflow/policy/tooling surface; no model-provider contract |
+| `@ai-sdk/ui-utils` | `1.2.11` | ui package; framework/schema/product runtime outside native provider coverage |
+| `@ai-sdk/valibot` | `3.0.58` | schema package; framework/schema/product runtime outside native provider coverage |
+| `@ai-sdk/vue` | `4.0.137` | ui package; framework/schema/product runtime outside native provider coverage |
+| `@ai-sdk/workflow` | `2.0.69` | adapter package; framework/schema/product runtime outside native provider coverage |
+| `@ai-sdk/workflow-harness` | `1.0.148` | JavaScript harness/sandbox runtime adapter; outside provider-model port |
+
+### Verification
+
+Focused Decision, major-provider, medium-provider, native UI, core/remaining-provider and MCP commands are recorded in the final verification block below. Full Swift and docs checks are mandatory before publication. Live paid provider calls remain opt-in and were not run.
+
+All commands completed successfully on Swift 6.4:
+
+- `swift test --filter 'Decision|Evaluate|Evaluation|WeeklyEvaluation20261011'` — 80 tests / 12 suites, zero issues.
+- `swift test --filter 'WeeklyMajorProviders20261011|WeeklyOpenAI20261011|WeeklyGoogle20261011'` — 37 tests / 3 suites / 50 case invocations, zero issues.
+- `swift test --filter 'WeeklyProviders20261011|WeeklyMistral20261011|WeeklyAzure20261011|WeeklyBFLXAI20261011'` — 31 tests / 70 case invocations, zero issues.
+- `swift test --filter 'WeeklyUI20261011|[aA][iI]ChatSession|AIChatTransport|[aA][iI]UIMessage|uiMessage|convertToModelMessage|ValidateUIMessages'` — 67 tests / 1 suite, zero issues.
+- `swift test --filter 'WeeklyCore20261011|WeeklyRemainingProviders20261011|WeeklyMCPCore20261011|WeeklyMCPEvents20261011|MCPOAuthFlow|TypesafeAIProvider|ProviderCapabilityMatrix'` — 67 tests / 5 suites, zero issues.
+- `swift test --filter 'WeeklyCore20261011|openAIResponsesJSONEncodesTextLikeToolResultsOnlyForOutputSchemaToolsLikeUpstream|aiGenerateObjectLogs|aiStreamObjectWarningsCall|googleVertexMediaModelsCarryResponseMetadata|blackForestLabsCredentialsAreRetainedForTrustedPollingButOmittedForSignedDownloads'` — 21 tests / 1 suite, zero issues.
+
+- `swift test` — **3,223 tests in 36 suites**, zero issues.
+- `swift build --package-path Examples` — all existing example targets built successfully.
+- `npm ci --prefix docs-site` — 446 packages installed / 447 audited.
+- `npm --prefix docs-site run check` — four Astro files, **0 errors, 0 warnings, 0 hints**.
+- `npm --prefix docs-site run build` — **96 pages**, search index and sitemap built.
+- Five public Decision, MCP Events, Azure MAI, Mistral Conversations and compatible-transform snippets type-checked against the public module with zero diagnostics.
+- Fresh `node Scripts/check-upstream-versions.js --all --json --fail-on-outdated` — **53 current, 0 drift, 0 errors**; exact registry prefix retains 90 names and the digest above.
+- `git diff --check` passes; task-only cached diff and final commit checks are required before tag/push.
+
+No credentialed live-provider checks were enabled. Release scope is additive API/capabilities, so the next tag is minor **2.3.0** from **2.2.0**.
 
 
 ## 2026-10-04 Topaz follow-up

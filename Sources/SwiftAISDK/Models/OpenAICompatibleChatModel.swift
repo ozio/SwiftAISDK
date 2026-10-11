@@ -322,7 +322,7 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
             body["stream_options"] = .object(["include_usage": .bool(true)])
         }
         if openAICompatibleProviderRoot(providerID) == "fireworks" {
-            body = fireworksChatBody(from: body)
+            body = fireworksChatBody(from: body, warnings: &warnings)
         }
         if openAICompatibleProviderRoot(providerID) == "moonshotai" {
             body = try moonshotChatBody(
@@ -338,7 +338,9 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
         if providerID.hasPrefix("xai.") {
             body = try xaiChatBody(from: body, request: request, warnings: &warnings)
         }
-        return (config.transformRequestBody?(body) ?? body, warnings)
+        body = config.transformRequestBody?(body) ?? body
+        body = config.transformRequestBodyWithWarnings?(body, &warnings) ?? body
+        return (body, warnings)
     }
 
     private func metadataNamespace(for request: LanguageModelRequest) -> String? {
@@ -435,7 +437,8 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
                         providerOptions: request.providerOptions
                     ),
                     systemRole: message.role == .system ? systemMessageMode : nil,
-                    supportsMultiPartToolContent: supportsMultiPartToolContent
+                    supportsMultiPartToolContent: supportsMultiPartToolContent,
+                    wrapToolErrors: unwrapOpenAIProviderOptions
                 ))
             }
             messages = converted
@@ -538,13 +541,21 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
         providerID: String,
         providerOptionsKey: String? = nil,
         systemRole: String? = nil,
-        supportsMultiPartToolContent: Bool = false
+        supportsMultiPartToolContent: Bool = false,
+        wrapToolErrors: Bool = false
     ) throws -> JSONValue {
         if message.role == .tool,
            let result = message.content.compactMap({ part -> AIToolResult? in
                if case let .toolResult(result) = part { result } else { nil }
            }).first {
             let output = result.modelOutput ?? result.result
+            let toolContent: String
+            if wrapToolErrors || isOpenAIBackedProvider(providerID),
+               output["type"]?.stringValue == "error-text" || output["type"]?.stringValue == "error-json" {
+                toolContent = openAIResponsesJSONString(.object(["error": output["value"] ?? .null])) ?? ""
+            } else {
+                toolContent = openAIResponsesJSONString(output) ?? output.stringValue ?? ""
+            }
             if supportsMultiPartToolContent, output["type"]?.stringValue == "content" {
                 return .object([
                     "role": .string("tool"), "tool_call_id": .string(result.toolCallID),
@@ -556,7 +567,7 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
             return .object([
                 "role": .string("tool"),
                 "tool_call_id": .string(result.toolCallID),
-                "content": .string(openAIResponsesJSONString(result.modelOutput ?? result.result) ?? result.modelOutput?.stringValue ?? result.result.stringValue ?? "")
+                "content": .string(toolContent)
             ])
         }
 

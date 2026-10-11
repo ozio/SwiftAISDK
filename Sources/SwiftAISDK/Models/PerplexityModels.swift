@@ -447,7 +447,13 @@ private func perplexityAgentPreparedCall(for request: LanguageModelRequest, mode
         if request.reasoning == "none" {
             warnings.append(AIWarning(type: "unsupported", feature: "reasoning \"none\""))
         } else if let reasoning = request.reasoning {
-            options["reasoning"] = .object(["effort": .string(reasoning)])
+            if let effort = mapReasoningToProviderEffort(
+                reasoning: reasoning,
+                effortMap: ["minimal": "minimal", "low": "low", "medium": "medium", "high": "high", "xhigh": "xhigh", "max": "xhigh"],
+                warnings: &warnings
+            ) {
+                options["reasoning"] = .object(["effort": .string(effort)])
+            }
         }
     }
 

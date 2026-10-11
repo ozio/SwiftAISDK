@@ -27,7 +27,12 @@ let result = try await model.generateText(
 print(result.output.bullets)
 ```
 
-Use `generateObject` when you want the most direct Swift API. Use `Output` when you want one facade for text, object, array, choice, and JSON strategies.
+New code can use `Output` for text, object, array, choice and JSON strategies.
+`generateObject` and `streamObject` remain callable and now emit stable
+`AISDK_DEP_GENERATE_OBJECT` / `AISDK_DEP_STREAM_OBJECT` warnings.
+Unified Output calls suppress warnings from their internal object helper.
+The default console logger emits each deprecation code once; custom warning
+loggers still receive every warning.
 
 ## Output Strategies
 

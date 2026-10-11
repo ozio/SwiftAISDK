@@ -49,7 +49,7 @@ struct ZAIProviderTests {
         let request = try #require(await transport.requests().first)
         #expect(request.url.absoluteString == "https://api.z.ai/api/paas/v4/chat/completions")
         #expect(request.headers["authorization"] == "Bearer environment-key")
-        #expect(request.headers["user-agent"] == "ai-sdk-zai/3.0.24")
+        #expect(request.headers["user-agent"] == "ai-sdk-zai/3.0.29")
     }
 
     @Test func ZAIProviderDefersMissingAPIKeyUntilRequestTime() async throws {
@@ -116,7 +116,7 @@ struct ZAIProviderTests {
         #expect(request.url.absoluteString == "https://example.com/zai/chat/completions")
         #expect(request.headers["authorization"] == "Bearer custom-key")
         #expect(request.headers["x-custom"] == "value")
-        #expect(request.headers["user-agent"] == "TestApp/1.0 ai-sdk-zai/3.0.24")
+        #expect(request.headers["user-agent"] == "TestApp/1.0 ai-sdk-zai/3.0.29")
         #expect(body["caller_marker"]?.boolValue == true)
     }
 

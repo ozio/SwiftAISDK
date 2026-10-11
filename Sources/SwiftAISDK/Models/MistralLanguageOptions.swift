@@ -44,6 +44,8 @@ func mistralSupportsReasoningEffort(_ modelID: String) -> Bool {
          "labs-leanstral-1-5-1",
          "magistral-medium-latest",
          "magistral-small-latest",
+         "mistral-large-4",
+         "mistral-large-4-0",
          "mistral-medium",
          "mistral-medium-2604",
          "mistral-medium-3",
@@ -74,7 +76,8 @@ func mistralReasoningEffort(_ reasoning: String?, warnings: inout [AIWarning]) -
             "low": "high",
             "medium": "high",
             "high": "high",
-            "xhigh": "high"
+            "xhigh": "high",
+            "max": "high"
         ],
         warnings: &warnings
     ).map(JSONValue.string)

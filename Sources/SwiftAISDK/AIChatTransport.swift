@@ -64,9 +64,13 @@ public struct AIChatReconnectRequest: Sendable {
 public protocol AIChatTransport: Sendable {
     func sendMessages(_ request: AIChatTransportRequest) throws -> AsyncThrowingStream<AIUIMessage, Error>
     func reconnectToStream(_ request: AIChatReconnectRequest) async throws -> AsyncThrowingStream<AIUIMessage, Error>?
+    /// Releases persistent resources when no consumers remain.
+    func close() async
 }
 
 public extension AIChatTransport {
+    func close() async {}
+
     func reconnectToStream(_ request: AIChatReconnectRequest) async throws -> AsyncThrowingStream<AIUIMessage, Error>? {
         nil
     }
@@ -246,46 +250,79 @@ public struct DirectAIChatTransport: AIChatTransport {
 
 
     public func sendMessages(_ request: AIChatTransportRequest) throws -> AsyncThrowingStream<AIUIMessage, Error> {
-        let modelMessages = try convertToModelMessages(request.messages)
-        let languageRequest = requestOptions.languageModelRequest(
-            messages: modelMessages,
-            abortSignal: request.abortSignal,
-            headers: request.headers
-        )
-        let languageStream: AsyncThrowingStream<LanguageStreamPart, Error>
-        if executableTools.isEmpty && prepareStep == nil {
-            languageStream = AI.streamText(
-                model: model,
-                request: languageRequest,
-                timeoutNanoseconds: timeoutNanoseconds,
-                retryPolicy: retryPolicy,
-                telemetry: telemetry
-            )
-        } else {
-            languageStream = AI.streamText(
-                model: model,
-                request: languageRequest,
-                executableTools: executableTools,
-                maxSteps: maxSteps,
-                stopWhen: stopWhen,
-                prepareStep: prepareStep,
-                toolCallers: toolCallers,
-                toolApproval: toolApproval,
-                timeoutNanoseconds: timeoutNanoseconds,
-                retryPolicy: retryPolicy,
-                telemetry: telemetry
-            )
+        let tools = executableTools.reduce(into: [String: AITool]()) { $0[$1.name] = $1 }
+        var schemas = requestOptions.tools.mapValues {
+            AIUIMessageToolSchema(inputSchema: $0["inputSchema"] ?? $0["parameters"] ?? .object([:]))
         }
-
-        let originalMessage = request.responseMessageID.flatMap { responseMessageID in
-            request.messages.last { $0.id == responseMessageID }
+        schemas.merge(tools.mapValues { AIUIMessageToolSchema($0) }) { _, executable in executable }
+        _ = try validateUIMessages(request.messages)
+        let toolSchemas = schemas
+        let refiners = tools.compactMapValues(\.refineArguments)
+        return AsyncThrowingStream { continuation in
+            let task = Task {
+                do {
+                    try Task.checkCancellation()
+                    try request.abortSignal?.throwIfAborted()
+                    var preparedMessages = try await validateUIMessagesForAgent(
+                        request.messages,
+                        toolSchemas: toolSchemas,
+                        refineToolInput: refiners
+                    )
+                    let registeredProviderCallIDs = Set(preparedMessages.flatMap(\.parts).compactMap { part -> String? in
+                        guard case let .toolCall(call) = part, requestOptions.tools[call.name] != nil else { return nil }
+                        return call.id
+                    })
+                    for index in preparedMessages.indices {
+                        preparedMessages[index].unavailableStaticToolCallIDs.subtract(registeredProviderCallIDs)
+                    }
+                    let modelMessages = try await convertToModelMessages(preparedMessages, tools: tools)
+                    try Task.checkCancellation()
+                    try request.abortSignal?.throwIfAborted()
+                    let languageRequest = requestOptions.languageModelRequest(
+                        messages: modelMessages,
+                        abortSignal: request.abortSignal,
+                        headers: request.headers
+                    )
+                    let languageStream: AsyncThrowingStream<LanguageStreamPart, Error>
+                    if executableTools.isEmpty && prepareStep == nil {
+                        languageStream = AI.streamText(
+                            model: model,
+                            request: languageRequest,
+                            timeoutNanoseconds: timeoutNanoseconds,
+                            retryPolicy: retryPolicy,
+                            telemetry: telemetry
+                        )
+                    } else {
+                        languageStream = AI.streamText(
+                            model: model,
+                            request: languageRequest,
+                            executableTools: executableTools,
+                            maxSteps: maxSteps,
+                            stopWhen: stopWhen,
+                            prepareStep: prepareStep,
+                            toolCallers: toolCallers,
+                            toolApproval: toolApproval,
+                            timeoutNanoseconds: timeoutNanoseconds,
+                            retryPolicy: retryPolicy,
+                            telemetry: telemetry
+                        )
+                    }
+                    let originalMessage = request.responseMessageID.flatMap { responseMessageID in
+                        preparedMessages.last { $0.id == responseMessageID }
+                    }
+                    let snapshots = AIUIMessageStreamReducer.snapshots(
+                        from: filteredLanguageStream(languageStream),
+                        messageID: request.responseMessageID ?? generateMessageID(),
+                        originalMessage: originalMessage
+                    )
+                    for try await snapshot in snapshots { continuation.yield(snapshot) }
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+            continuation.onTermination = { _ in task.cancel() }
         }
-
-        return AIUIMessageStreamReducer.snapshots(
-            from: filteredLanguageStream(languageStream),
-            messageID: request.responseMessageID ?? generateMessageID(),
-            originalMessage: originalMessage
-        )
     }
 
     public func reconnectToStream(_ request: AIChatReconnectRequest) async throws -> AsyncThrowingStream<AIUIMessage, Error>? {

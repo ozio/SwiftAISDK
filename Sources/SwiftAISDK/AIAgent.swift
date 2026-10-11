@@ -153,7 +153,7 @@ public struct AIToolLoopAgent: AIAgent {
             executableTools: executableTools,
             maxSteps: maxSteps,
             toolCallers: toolCallers,
-            stopWhen: stopWhen,
+            stopWhen: effectiveStopConditions,
             prepareStep: prepareStep,
             toolApproval: toolApproval,
             retryPolicy: retryPolicy(for: options),
@@ -177,7 +177,7 @@ public struct AIToolLoopAgent: AIAgent {
             request: preparedRequest,
             executableTools: executableTools,
             maxSteps: maxSteps,
-            stopWhen: stopWhen,
+            stopWhen: effectiveStopConditions,
             prepareStep: prepareStep,
             toolCallers: toolCallers,
             toolApproval: toolApproval,
@@ -187,6 +187,19 @@ public struct AIToolLoopAgent: AIAgent {
             retryPolicy: retryPolicy(for: options),
             telemetry: options.telemetry ?? telemetry
         )
+    }
+
+    private var effectiveStopConditions: [AIStopCondition] {
+        guard stopWhen.isEmpty, maxSteps == 20 else { return stopWhen }
+        return [AIStopCondition { context in
+            guard context.steps.count == 20, let step = context.steps.last else { return false }
+            await AIWarningLogging.logWarnings([AIWarning(type: "other", message:
+                "The tool loop stopped because it reached the default stopWhen condition, isStepCount(20). " +
+                "To allow more steps, set stopWhen to isStepCount(...) with a higher limit or provide a custom stop condition. " +
+                "Learn more: https://ai-sdk.dev/docs/agents/loop-control"
+            )], providerID: step.providerID, modelID: step.modelID)
+            return true
+        }]
     }
 
     private func request(messages: [AIMessage], options: AIAgentCallOptions) throws -> LanguageModelRequest {

@@ -18,8 +18,10 @@ SwiftAISDK is a SwiftPM port of the provider-facing Vercel AI SDK.
 - [Telemetry](/llms/components/telemetry.txt): Public SwiftAISDK APIs for telemetry.
 - [Tools](/llms/components/tools.txt): Public SwiftAISDK APIs for tools.
 - [Video and reranking](/llms/components/video-and-reranking.txt): Public SwiftAISDK APIs for video and reranking.
+- [MCP events](/llms/cookbook/mcp-events.txt): Receive authenticated MCP event webhooks with durable subscription state or delegate subscription management to an adapter.
 - [MCP tools](/llms/cookbook/mcp-tools.txt): Discover MCP tools and pass them to a language model.
 - [Durable batches](/llms/core/batch-text.txt): Run provider-owned text and image batches and resume their lifecycle.
+- [Decision](/llms/core/decide.txt): Ask typed Choice, Score, and Boolean questions about ordered text, JSON, and file evidence.
 - [Dubbing](/llms/core/dubbing.txt): Create and inspect provider dubbing jobs.
 - [Embeddings](/llms/core/embeddings.txt): Convert text into vectors for search, clustering, and retrieval.
 - [Error handling](/llms/core/error-handling.txt): Handle validation, provider, retry, timeout, abort, and output errors.

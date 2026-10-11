@@ -110,6 +110,8 @@ func streamWithAbortSignal<Part: Sendable>(
             }
         }
         let registration = abortSignal.addAbortHandler { _ in
+            // Settle consumers before telemetry or provider cancellation can stall.
+            continuation.finish(throwing: AIAbortError(reason: abortSignal.reason, reasonName: abortSignal.reasonName))
             task.cancel()
         }
         continuation.onTermination = { _ in
@@ -222,6 +224,10 @@ func streamWithSemanticOutputTimeouts(
             do {
                 for try await part in stream {
                     try Task.checkCancellation()
+                    switch part {
+                    case .finish, .finishMetadata, .error: watchdog.endModelOutput()
+                    default: break
+                    }
                     if isSemanticLanguageOutput(part) {
                         guard watchdog.recordSemanticOutput() else { return }
                     } else if watchdog.hasTimedOut {
@@ -271,6 +277,15 @@ func streamWithSemanticOutputTimeouts<FinalOutput: Sendable, PartialOutput: Send
             do {
                 for try await part in stream {
                     try Task.checkCancellation()
+                    switch part {
+                    case .finish: watchdog.endModelOutput()
+                    case let .raw(languagePart):
+                        switch languagePart {
+                        case .finish, .finishMetadata, .error: watchdog.endModelOutput()
+                        default: break
+                        }
+                    default: break
+                    }
                     if isSemanticOutput(part) {
                         guard watchdog.recordSemanticOutput() else { return }
                     } else if watchdog.hasTimedOut {
@@ -358,6 +373,7 @@ private final class AIStreamOutputTimeoutWatchdog: @unchecked Sendable {
     private var timer: Task<Void, Never>?
     private var generation = 0
     private var didFinish = false
+    private var modelOutputEnded = false
 
     init(
         firstChunkNanoseconds: UInt64?,
@@ -384,12 +400,22 @@ private final class AIStreamOutputTimeoutWatchdog: @unchecked Sendable {
     func recordSemanticOutput() -> Bool {
         lock.withLock {
             guard !didFinish else { return false }
+            guard !modelOutputEnded else { return true }
             timer?.cancel()
             timer = nil
             if let chunkNanoseconds {
                 armLocked(phase: .chunk, durationNanoseconds: chunkNanoseconds)
             }
             return true
+        }
+    }
+
+    func endModelOutput() {
+        lock.withLock {
+            modelOutputEnded = true
+            generation += 1
+            timer?.cancel()
+            timer = nil
         }
     }
 

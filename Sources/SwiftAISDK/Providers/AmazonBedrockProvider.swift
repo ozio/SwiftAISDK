@@ -1,7 +1,7 @@
 import CryptoKit
 import Foundation
 
-private let amazonBedrockUserAgent = "ai-sdk-amazon-bedrock/5.0.105"
+private let amazonBedrockUserAgent = "ai-sdk-amazon-bedrock/5.0.113"
 
 public struct AmazonBedrockCredentials: Sendable {
     public var accessKeyID: String
@@ -482,6 +482,8 @@ enum AWSSigV4 {
         var headers = request.headers.reduce(into: [String: String]()) { partial, element in
             partial[element.key.lowercased()] = element.value.trimmingCharacters(in: .whitespacesAndNewlines)
         }
+        let unsignedHeaders = headers.filter { !$0.value.unicodeScalars.allSatisfy { $0.value < 128 } }
+        headers = headers.filter { $0.value.unicodeScalars.allSatisfy { $0.value < 128 } }
         headers["host"] = host
         headers["x-amz-date"] = amzDate
         headers["x-amz-content-sha256"] = payloadHash
@@ -511,6 +513,7 @@ enum AWSSigV4 {
         let signature = hmacHex(key: signingKey(secret: credentials.secretAccessKey, date: shortDate, region: region, service: service), data: Data(stringToSign.utf8))
 
         headers["authorization"] = "AWS4-HMAC-SHA256 Credential=\(credentials.accessKeyID)/\(credentialScope), SignedHeaders=\(signedHeaders), Signature=\(signature)"
+        headers.merge(unsignedHeaders) { signed, _ in signed }
         return AIHTTPRequest(method: request.method, url: request.url, headers: headers, body: request.body, abortSignal: request.abortSignal)
     }
 

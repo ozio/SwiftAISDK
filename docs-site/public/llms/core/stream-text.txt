@@ -110,6 +110,9 @@ The step/first/inter-chunk timers restart for every model-call step. Only semant
 output disarms or resets them: non-empty text, reasoning, or tool-input deltas,
 files, reasoning files, and complete tool calls. Metadata, raw keep-alives,
 lifecycle markers, tool results, and empty deltas do not extend the deadline.
+A terminal model finish/error disarms first/inter-chunk timers before output
+postprocessing or tool work. Every replacement provider attempt starts a fresh
+first-output timer. Explicit aborts preserve their caller reason and reason name.
 First/inter-chunk failures throw `AIStreamTimeoutError` with `.firstChunk` or
 `.chunk`; step and total failures use `AIError.timeout`. The legacy flat
 `timeoutNanoseconds` remains available as the total deadline.

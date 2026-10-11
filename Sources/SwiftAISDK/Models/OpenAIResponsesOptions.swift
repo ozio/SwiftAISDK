@@ -172,6 +172,7 @@ func openAIResponsesInputMessageJSON(
     computerToolNames: Set<String> = [],
     toolSearchToolName: String? = "tool_search",
     providerID: String = "openai",
+    wrapToolErrors: Bool = false,
     useDeveloperRoleForSystem: Bool = false,
     explicitMessageItemType: Bool = false,
     programmaticToolCallIDs: Set<String> = [],
@@ -235,6 +236,7 @@ func openAIResponsesInputMessageJSON(
                         "output": openResponsesToolResultOutput(
                             result,
                             providerID: providerID,
+                            wrapToolErrors: wrapToolErrors,
                             promptCacheBreakpoint: openAIResponsesScalarToolResultPromptCacheBreakpoint(result),
                             warnings: &warnings
                         )
@@ -248,6 +250,7 @@ func openAIResponsesInputMessageJSON(
                         result,
                         providerID: providerID,
                         jsonEncodeText: outputSchemaToolNames.contains(result.toolName),
+                        wrapToolErrors: wrapToolErrors,
                         promptCacheBreakpoint: openAIResponsesScalarToolResultPromptCacheBreakpoint(result),
                         warnings: &warnings
                     )
@@ -276,10 +279,15 @@ func openAIResponsesInputMessageJSON(
     if message.role == .assistant {
         var output: [JSONValue] = []
         var reasoningIndexes: [String: Int] = [:]
+        var emittedTextItemIDs: Set<String> = []
         for part in message.content {
             switch part {
             case let .text(text, providerMetadata):
                 if hasConversation, openAIResponsesItemID(from: providerMetadata) != nil {
+                    break
+                }
+                if store, let itemID = openAIResponsesItemID(from: providerMetadata),
+                   !emittedTextItemIDs.insert(itemID).inserted {
                     break
                 }
                 output.append(openAIResponsesAssistantTextItem(
@@ -1229,9 +1237,9 @@ func openAILanguageModelCapabilities(_ modelID: String) -> OpenAILanguageModelCa
     let isGPT6SolOrLuna = modelID == "gpt-6-sol" || modelID == "gpt-6-luna"
     let isReasoningModel = oSeriesVersion != nil
         || (gptVersion.map { $0.major >= 5 } == true && !isGPTChatModel)
-    let supportsNonReasoningParameters = gptVersion.map {
+    let supportsNonReasoningParameters = isGPT6SolOrLuna || (gptVersion.map {
         !isGPT6OrLaterModel && $0.major == 5 && ($0.minor ?? 0) >= 1
-    } ?? false
+    } ?? false)
     return OpenAILanguageModelCapabilities(
         isReasoningModel: isReasoningModel,
         supportsNonReasoningParameters: supportsNonReasoningParameters,

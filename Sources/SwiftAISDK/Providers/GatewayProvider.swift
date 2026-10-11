@@ -215,9 +215,9 @@ public struct GatewayTranscriptionFactory: Sendable {
     }
 }
 
-public final class GatewayProvider: AIProvider, AIEvaluationProvider, @unchecked Sendable {
+public final class GatewayProvider: AIProvider, AIEvaluationProvider, AIDecisionProvider, @unchecked Sendable {
     public let providerID = "gateway"
-    public let supportedCapabilities: Set<ModelCapability> = [.language, .embedding, .image, .transcription, .speech, .video, .reranking, .evaluation]
+    public let supportedCapabilities: Set<ModelCapability> = [.language, .embedding, .image, .transcription, .speech, .video, .reranking, .evaluation, .decision]
     private let config: ModelHTTPConfig
     private let webSocketTransport: any AIDuplexWebSocketTransport
 
@@ -252,7 +252,7 @@ public final class GatewayProvider: AIProvider, AIEvaluationProvider, @unchecked
         if normalizedHeaders["ai-gateway-auth-method"] == nil {
             settings.headers["ai-gateway-auth-method"] = auth.method
         }
-        let headers = withUserAgentSuffix(settings.headers, "ai-sdk-gateway/4.0.103")
+        let headers = withUserAgentSuffix(settings.headers, "ai-sdk-gateway/4.0.110")
         config = ModelHTTPConfig(
             providerID: providerID,
             baseURL: settings.baseURL ?? "https://ai-gateway.vercel.sh/v4/ai",
@@ -262,7 +262,8 @@ public final class GatewayProvider: AIProvider, AIEvaluationProvider, @unchecked
             queryParams: settings.queryParams,
             supportsStructuredOutputs: settings.supportsStructuredOutputs,
             maxEmbeddingsPerCall: settings.maxEmbeddingsPerCall,
-            transformRequestBody: settings.transformRequestBody
+            transformRequestBody: settings.transformRequestBody,
+            batchResultMaxLineBytes: try aiBatchResultLineLimit(settings.batchResultDownloads?.maxLineBytes)
         )
         self.webSocketTransport = webSocketTransport
     }
@@ -332,6 +333,12 @@ public final class GatewayProvider: AIProvider, AIEvaluationProvider, @unchecked
     public func rerankingModel(_ modelID: String) throws -> any RerankingModel {
         GatewayRerankingModel(modelID: modelID, config: config)
     }
+
+    public func decisionModel(_ modelID: String) throws -> any AIDecisionModelV4 {
+        GatewayDecisionModel(modelID: modelID, config: config)
+    }
+
+    public func decision(_ modelID: String) throws -> any AIDecisionModelV4 { try decisionModel(modelID) }
 
     public func evaluationModel(_ modelID: String) throws -> any AIEvaluationModelV4 {
         GatewayEvaluationModel(modelID: modelID, config: config)
